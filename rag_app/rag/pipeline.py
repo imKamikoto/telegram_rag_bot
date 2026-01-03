@@ -48,7 +48,7 @@ class RAGPipeline:
         )
         return response["embedding"]
 
-    async def _generate(self, question, messages: list[dict[str, str]] = None) -> str:
+    async def _generate(self, messages: list[dict[str, str]]) -> str:
         response = await asyncio.to_thread(
             self.client.chat, model=self.settings.llm_model, messages=messages
         )

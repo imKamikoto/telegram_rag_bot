@@ -9,10 +9,7 @@ load_dotenv("../docker/.env")
 @dataclass
 class Settings:
     bot_token: str
-    ollama_url: str
-    ollama_model: str
-    system_prompt: str
-    max_turns: int
+    rag_api_url: str
     allowed_user_ids: set[int]
     invitation_code: str
 
@@ -22,14 +19,9 @@ def load_settings() -> Settings:
     if not bot_token:
         raise RuntimeError("BOT_TOKEN is not set in the environment or .env")
 
-    ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
-    ollama_model = os.getenv("OLLAMA_MODEL", "llama3.1")
-    system_prompt = os.getenv("SYSTEM_PROMPT", "Ты полезный ассистент.")
-
-    try:
-        max_turns = int(os.getenv("MAX_TURNS", "12"))
-    except ValueError:
-        max_turns = 12
+    rag_api_url = os.getenv("RAG_API_URL", "http://localhost:8000/api/v1").rstrip("/")
+    if not rag_api_url:
+        raise RuntimeError("RAG_API_URL is not set in the environment or .env")
 
     allowed_list_raw = os.getenv("ALLOWED_USER_IDS", "").strip()
     allowed_user_ids: set[int] = set()
@@ -46,10 +38,7 @@ def load_settings() -> Settings:
 
     return Settings(
         bot_token=bot_token,
-        ollama_url=ollama_url,
-        ollama_model=ollama_model,
-        system_prompt=system_prompt,
-        max_turns=max_turns,
+        rag_api_url=rag_api_url,
         allowed_user_ids=allowed_user_ids,
         invitation_code=invitation_code,
     )

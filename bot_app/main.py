@@ -5,27 +5,18 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from config import load_settings
 from handlers import register_handlers
-from history import ChatHistory
-from ollama_temp_client import OllamaClient
+from rag_service import RagService
 
 
 async def main() -> None:
     settings = load_settings()
 
-    history = ChatHistory(
-        system_prompt=settings.system_prompt,
-        max_turns=settings.max_turns,
-    )
-    ollama = OllamaClient(
-        base_url=settings.ollama_url,
-        model=settings.ollama_model,
-    )
+    rag_service = RagService(api_base_url=settings.rag_api_url)
 
     dp = Dispatcher()
     register_handlers(
         dp,
-        history=history,
-        ollama=ollama,
+        rag_service=rag_service,
         allowed_user_ids=settings.allowed_user_ids,
         invitation_code=settings.invitation_code,
     )

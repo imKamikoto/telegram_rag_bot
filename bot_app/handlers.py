@@ -5,15 +5,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 
-from history import ChatHistory
 from keyboards import main_keyboard
-from ollama_temp_client import OllamaClient
+from rag_service import RagService
 
 
 def register_handlers(
     dp: Dispatcher,
-    history: ChatHistory,
-    ollama: OllamaClient,
+    rag_service: RagService,
     allowed_user_ids: Iterable[int] | None = None,
     invitation_code: str = "",
 ) -> None:
@@ -31,15 +29,12 @@ def register_handlers(
 
     @dp.message(CommandStart())
     async def start(message: Message) -> None:
-        # if await _is_blocked(message):
-        #     return
-        # history.reset(message.from_user.id)
         await message.answer(
-            "👋 Привет! Я бот, который говорит через Ollama.\n"
-            "Задай вопрос — отвечу.\n\n"
+            "👋 Привет! Я бот, который отвечает из базы знаний.\n"
+            "Задай вопрос — я спрошу RAG сервис и верну ответ.\n\n"
             "Команды и кнопки:\n"
             "/start — начать заново\n"
-            "/reset — сбросить контекст\n"
+            "/reset — перезапустить диалог (контекст не сохраняется)\n"
             "/code - ввести код приглашения\n",
             reply_markup=main_keyboard(),
         )
@@ -74,14 +69,15 @@ def register_handlers(
     async def reset(message: Message) -> None:
         if await _is_blocked(message):
             return
-        history.reset(message.from_user.id)
-        await message.answer("Контекст сброшен ✅", reply_markup=main_keyboard())
+        await message.answer(
+            "Контекст не сохраняется. Можешь задавать новый вопрос ✅",
+            reply_markup=main_keyboard(),
+        )
 
     @dp.message(F.text)
     async def chat(message: Message) -> None:
         if await _is_blocked(message):
             return
-        user_id = message.from_user.id
         text = message.text.strip()
         if text.startswith("/"):
             return
@@ -93,14 +89,10 @@ def register_handlers(
         await message.bot.send_chat_action(message.chat.id, "typing")
 
         try:
-            current_history = history.add_user(user_id, text)
-            answer = await ollama.chat(current_history)
+            answer = await rag_service.ask(text)
         except Exception as exc:
-            await message.answer(f"Ошибка: {exc}")
-            history.reset(user_id)
+            await message.answer(f"Ошибка при запросе к RAG: {exc}")
             return
-
-        history.add_assistant(user_id, answer)
 
         if len(answer) <= 4000:
             await message.answer(answer, reply_markup=main_keyboard())
