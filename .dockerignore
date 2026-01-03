@@ -1,0 +1,11 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+.DS_Store
+.vscode
+.idea
+.env
+docker/.env
+bot_app/.env

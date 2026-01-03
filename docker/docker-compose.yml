@@ -1,0 +1,58 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-rag}
+      POSTGRES_USER: ${POSTGRES_USER:-rag_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag_password}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - rag_pg_data:/var/lib/postgresql/data
+
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: rag_ollama
+  #   restart: unless-stopped
+  #   pull_policy: always
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - rag_ollama:/root/.ollama
+  #   environment:
+  #     - OLLAMA_KEEP_ALIVE=24h
+
+  rag_app:
+    build:
+      context: ..
+      dockerfile: docker/rag.Dockerfile
+    container_name: rag_api
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - RAG_DATABASE_URL=${RAG_DATABASE_URL}
+      - RAG_OLLAMA_BASE_URL=${RAG_OLLAMA_BASE_URL}
+      - RAG_LLM_MODEL=${RAG_LLM_MODEL}
+      - RAG_EMBED_MODEL=${RAG_EMBED_MODEL}
+      - RAG_EMBED_DIM=${RAG_EMBED_DIM}
+      - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE}
+      - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP}
+      - RAG_TOP_K=${RAG_TOP_K}
+      - RAG_API_HOST=${RAG_API_HOST}
+      - RAG_API_PORT=${RAG_API_PORT}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../rag_app:/app
+    # depends_on:
+    #   # - postgres
+    #   # - ollama
+
+volumes:
+  rag_pg_data:
+  rag_ollama:
