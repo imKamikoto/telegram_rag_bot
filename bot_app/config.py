@@ -11,7 +11,8 @@ class Settings:
     bot_token: str
     rag_api_url: str
     allowed_user_ids: set[int]
-    invitation_code: str
+    admin_user_ids: set[int]
+    admin_webapp_url: str | None
 
 
 def load_settings() -> Settings:
@@ -34,11 +35,26 @@ def load_settings() -> Settings:
                 allowed_user_ids.add(int(value))
             except ValueError:
                 continue
-    invitation_code = os.getenv("INVITATION_CODE", "").strip()
+    admin_list_raw = os.getenv("ADMIN_USER_IDS", "").strip()
+    admin_user_ids: set[int] = set()
+    if admin_list_raw:
+        for value in admin_list_raw.split(","):
+            value = value.strip()
+            if not value:
+                continue
+            try:
+                admin_user_ids.add(int(value))
+            except ValueError:
+                continue
+    else:
+        admin_user_ids = set(allowed_user_ids)
+
+    admin_webapp_url = os.getenv("ADMIN_WEBAPP_URL", "").strip() or None
 
     return Settings(
         bot_token=bot_token,
         rag_api_url=rag_api_url,
         allowed_user_ids=allowed_user_ids,
-        invitation_code=invitation_code,
+        admin_user_ids=admin_user_ids,
+        admin_webapp_url=admin_webapp_url,
     )

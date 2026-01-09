@@ -4,6 +4,7 @@ from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rag_app.db.models import Document, DocumentChunk
+from rag_app.services.documents import DocumentChunkService, DocumentService
 from rag_app.storage.vector.base import RetrievedChunk, VectorStore
 
 
@@ -25,26 +26,22 @@ class PgVectorStore(VectorStore):
         if len(chunks) != len(embeddings):
             raise ValueError("Chunks and embeddings length mismatch")
 
-        session.add(document)
-        await session.flush()
+        doc_service = DocumentService(session)
+        chunk_service = DocumentChunkService(session)
 
-        chunk_rows: list[DocumentChunk] = []
-        for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        stored_doc = await doc_service.create_document(
+            file_name=document.file_name,
+            content=document.content,
+            source=document.source,
+            active=document.active,
+        )
+
+        for embedding in embeddings:
             if self.embed_dim and len(embedding) != self.embed_dim:
                 raise ValueError("Embedding dimension mismatch")
-            chunk_rows.append(
-                DocumentChunk(
-                    document_id=document.id,
-                    chunk_index=idx,
-                    content=chunk,
-                    embedding=list(embedding),
-                )
-            )
 
-        session.add_all(chunk_rows)
-        await session.commit()
-        await session.refresh(document)
-        return document
+        await chunk_service.create_chunks_bulk(stored_doc.id, chunks, embeddings)
+        return stored_doc
 
     async def similarity_search(
         self, session: AsyncSession, embedding: Sequence[float], limit: int
@@ -54,6 +51,7 @@ class PgVectorStore(VectorStore):
         stmt: Select[tuple[DocumentChunk, Document, float]] = (
             select(DocumentChunk, Document, distance_expr.label("distance"))
             .join(Document, DocumentChunk.document_id == Document.id)
+            .where(Document.active.is_(True))
             .order_by(distance_expr)
             .limit(limit)
         )
