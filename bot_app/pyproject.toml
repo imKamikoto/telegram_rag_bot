@@ -1,0 +1,21 @@
+[project]
+name = "bot_app"
+version = "0.1.0"
+description = "Telegram bot for querying the RAG API service."
+requires-python = ">=3.11"
+dependencies = [
+    "aiogram>=3.13.1",
+    "aiohttp>=3.9.5",
+    "python-dotenv>=1.0.1",
+]
+
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+package = true
+
+[tool.setuptools]
+packages = ["bot_app"]
+package-dir = { bot_app = "." }

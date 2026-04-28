@@ -1,0 +1,14 @@
+pyproject.toml
+./__init__.py
+./config.py
+./handlers.py
+./history.py
+./keyboards.py
+./main.py
+./ollama_temp_client.py
+./rag_service.py
+bot_app.egg-info/PKG-INFO
+bot_app.egg-info/SOURCES.txt
+bot_app.egg-info/dependency_links.txt
+bot_app.egg-info/requires.txt
+bot_app.egg-info/top_level.txt
