@@ -13,6 +13,11 @@ services:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - rag_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-rag_user} -d ${POSTGRES_DB:-rag}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # ollama:
   #   image: ollama/ollama:latest
@@ -49,9 +54,25 @@ services:
       - "8000:8000"
     volumes:
       - ../rag_app:/app
-    # depends_on:
-    #   # - postgres
-    #   # - ollama
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bot_app:
+    build:
+      context: ..
+      dockerfile: docker/bot.Dockerfile
+    container_name: rag_bot
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - RAG_API_URL=http://rag_api:8000/api/v1
+      - ALLOWED_USER_IDS=${ALLOWED_USER_IDS:-}
+      - INVITATION_CODE=${INVITATION_CODE}
+    depends_on:
+      - rag_app
 
 volumes:
   rag_pg_data:

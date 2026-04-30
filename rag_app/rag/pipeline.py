@@ -11,7 +11,7 @@ from rag_app.db.models import Document
 from rag_app.rag.chunking import chunk_text
 from rag_app.rag.prompts import build_messages
 from rag_app.rag.retriever import Retriever
-from rag_app.storage.vector import RetrievedChunk, VectorStore
+from rag_app.storage.vector import VectorStore
 
 
 class RAGPipeline:
@@ -35,10 +35,15 @@ class RAGPipeline:
         stored = await self.vector_store.add_document(session, document, chunks, embeddings)
         return {"document_id": stored.id, "chunks_indexed": len(chunks)}
 
-    async def ask(self, session: AsyncSession, question: str) -> dict[str, Any]:
+    async def ask(
+        self,
+        session: AsyncSession,
+        question: str,
+        history: list[dict[str, str]] | None = None,
+    ) -> dict[str, Any]:
         query_embedding = await self._embed(question)
         contexts = await self.retriever.retrieve(session, query_embedding)
-        messages = build_messages(question, contexts)
+        messages = build_messages(question, contexts, history=history)
         answer = await self._generate(messages)
         return {"answer": answer, "contexts": contexts}
 

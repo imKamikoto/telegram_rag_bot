@@ -6,8 +6,14 @@ class IngestResponse(BaseModel):
     chunks_indexed: int = Field(..., description="Количество проиндексированных чанков")
 
 
+class HistoryMessage(BaseModel):
+    role: str = Field(..., description="Роль: 'user' или 'assistant'")
+    content: str = Field(..., description="Текст сообщения")
+
+
 class AskRequest(BaseModel):
     question: str = Field(..., description="Вопрос пользователя")
+    history: list[HistoryMessage] = Field(default_factory=list, description="История диалога")
 
 
 class ContextChunk(BaseModel):

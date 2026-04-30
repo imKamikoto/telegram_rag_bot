@@ -32,6 +32,7 @@ async def ask(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Вопрос не может быть пустым"
         )
 
-    result = await pipeline.ask(session, question)
+    history = [{"role": m.role, "content": m.content} for m in payload.history]
+    result = await pipeline.ask(session, question, history=history or None)
     contexts = [_map_context(ctx) for ctx in result["contexts"]]
     return AskResponse(answer=result["answer"], contexts=contexts)

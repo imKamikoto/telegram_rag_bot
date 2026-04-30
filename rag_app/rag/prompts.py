@@ -2,11 +2,16 @@ from rag_app.storage.vector.base import RetrievedChunk
 
 SYSTEM_PROMPT = (
     "Ты — ассистент, который отвечает только на основе предоставленного контекста. "
-    "Если информации недостаточно, честно скажи об этом."
+    "Если информации недостаточно, честно скажи об этом. "
+    "Учитывай предыдущие сообщения в диалоге при формировании ответа."
 )
 
 
-def build_messages(question: str, contexts: list[RetrievedChunk]) -> list[dict[str, str]]:
+def build_messages(
+    question: str,
+    contexts: list[RetrievedChunk],
+    history: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
     context_block = "\n\n".join(
         f"[{idx + 1}] (doc: {ctx.document_name}) {ctx.content}" for idx, ctx in enumerate(contexts)
     )
@@ -15,7 +20,8 @@ def build_messages(question: str, contexts: list[RetrievedChunk]) -> list[dict[s
         f"Контекст:\n{context_block or 'Нет контекста'}\n\n"
         f"Вопрос: {question}"
     )
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
+    messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    if history:
+        messages.extend(history)
+    messages.append({"role": "user", "content": user_prompt})
+    return messages
