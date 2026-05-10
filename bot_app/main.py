@@ -18,7 +18,8 @@ async def main() -> None:
         dp,
         rag_service=rag_service,
         allowed_user_ids=settings.allowed_user_ids,
-        invitation_code=settings.invitation_code,
+        admin_user_ids=settings.admin_user_ids,
+        admin_webapp_url=settings.admin_webapp_url,
     )
 
     session = AiohttpSession()

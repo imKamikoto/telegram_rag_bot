@@ -1,4 +1,12 @@
+__init__.py
+config.py
+handlers.py
+history.py
+keyboards.py
+main.py
+ollama_temp_client.py
 pyproject.toml
+rag_service.py
 ./__init__.py
 ./config.py
 ./handlers.py
