@@ -2,18 +2,31 @@
   font-family: "Space Grotesk", "Segoe UI", system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: var(--fg, #e6f1ff);
-  background-color: var(--bg, #0f172a);
   color-scheme: dark;
+
+  /* ── Base palette ── */
   --bg: var(--tg-theme-bg-color, #0f172a);
-  --card: color-mix(in srgb, var(--bg) 70%, #0ea5e9 10%, #22c55e 10%);
+  --fg: var(--tg-theme-text-color, #e6f1ff);
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-2: rgba(255, 255, 255, 0.08);
+  --border: rgba(255, 255, 255, 0.08);
   --muted: #8aa0c2;
+
+  /* ── Accent ── */
   --accent: var(--tg-theme-button-color, #0ea5e9);
   --accent-text: var(--tg-theme-button-text-color, #0b1727);
-  --border: rgba(255, 255, 255, 0.06);
+  --accent-soft: rgba(14, 165, 233, 0.15);
+
+  /* ── Semantic ── */
   --danger: #ef4444;
   --success: #22c55e;
   --warning: #f59e0b;
+
+  /* Legacy alias used by old styles */
+  --card: rgba(255, 255, 255, 0.03);
+
+  color: var(--fg);
+  background-color: var(--bg);
 }
 
 *,

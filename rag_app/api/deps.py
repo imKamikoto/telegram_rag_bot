@@ -3,7 +3,9 @@ from functools import lru_cache
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from rag_app.cache.redis import RedisCache
 from rag_app.config import get_settings
+from rag_app.storage.minio import MinioStorage
 from rag_app.db.models import User
 from rag_app.db.session import get_session
 from rag_app.rag.pipeline import RAGPipeline
@@ -16,7 +18,16 @@ from rag_app.storage.vector.pgvector import PgVectorStore
 def _pipeline() -> RAGPipeline:
     settings = get_settings()
     vector_store = PgVectorStore(settings.embed_dim)
-    return RAGPipeline(settings, vector_store)
+    pipeline = RAGPipeline(settings, vector_store)
+    pipeline.cache = RedisCache(settings.redis_url)
+    pipeline.minio = MinioStorage(
+        endpoint=settings.minio_endpoint,
+        access_key=settings.minio_access_key,
+        secret_key=settings.minio_secret_key,
+        bucket=settings.minio_bucket,
+        secure=settings.minio_secure,
+    )
+    return pipeline
 
 
 def get_pipeline() -> RAGPipeline:
@@ -45,8 +56,7 @@ async def get_current_user(
     admin_ids = set(settings.admin_telegram_ids)
     service = UserService(session)
     try:
-        # user = await service.get_user_by_telegram_id(tg_user.id)
-        user = await service.get_user_by_telegram_id(529936774)
+        user = await service.get_user_by_telegram_id(tg_user.id)
         should_be_admin = tg_user.id in admin_ids
 
         if user is None:

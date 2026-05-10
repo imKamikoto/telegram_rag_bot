@@ -19,9 +19,26 @@ class DocumentService:
         self.session = session
 
     async def create_document(
-        self, file_name: str, content: str, source: str = "upload", active: bool = True
+        self,
+        file_name: str,
+        content: str,
+        source: str = "upload",
+        active: bool = True,
+        knowledge_base_id: int | None = None,
+        s3_key: str | None = None,
+        page_count: int | None = None,
+        status: str = "ready",
     ) -> Document:
-        document = Document(file_name=file_name, content=content, source=source, active=active)
+        document = Document(
+            file_name=file_name,
+            content=content,
+            source=source,
+            active=active,
+            knowledge_base_id=knowledge_base_id,
+            s3_key=s3_key,
+            page_count=page_count,
+            status=status,
+        )
         self.session.add(document)
         await self.session.commit()
         await self.session.refresh(document)
@@ -30,8 +47,15 @@ class DocumentService:
     async def get_document_by_id(self, document_id: int) -> Optional[Document]:
         return await self.session.scalar(select(Document).where(Document.id == document_id))
 
-    async def list_documents(self, limit: int = 100, offset: int = 0) -> list[Document]:
+    async def list_documents(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        knowledge_base_id: int | None = None,
+    ) -> list[Document]:
         stmt = select(Document).order_by(Document.id).offset(offset).limit(limit)
+        if knowledge_base_id is not None:
+            stmt = stmt.where(Document.knowledge_base_id == knowledge_base_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

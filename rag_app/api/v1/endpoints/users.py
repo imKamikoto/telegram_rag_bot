@@ -1,3 +1,5 @@
+from typing import Literal, cast
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,10 +29,10 @@ def _handle_service_error(exc: UsersServiceError) -> HTTPException:
 
 def _user_response(user: User) -> UserResponse:
     return UserResponse(
-        id="529936774",
+        id=user.id,
         telegram_name=user.telegram_name,
         telegram_id=user.telegram_id,
-        role=user.role,
+        role=cast(Literal["user", "admin"], user.role),
     )
 
 
@@ -50,7 +52,10 @@ async def create_invite_code_endpoint(
 ) -> InviteCodeResponse:
     service = UserService(session)
     try:
-        invite = await service.create_invite_code(max_uses=payload.max_uses if payload else None)
+        invite = await service.create_invite_code(
+            max_uses=payload.max_uses if payload else None,
+            knowledge_base_id=payload.knowledge_base_id if payload else None,
+        )
     except UsersServiceError as exc:
         raise _handle_service_error(exc) from exc
 
@@ -75,8 +80,11 @@ async def list_invite_codes_endpoint(
             InviteCodeInfo(
                 id=invite.id,
                 code=invite.code,
+                knowledge_base_id=invite.knowledge_base_id,
                 max_uses=invite.max_uses,
                 used_count=invite.used_count,
+                is_used=invite.is_used,
+                expires_at=invite.expires_at,
                 created_at=invite.created_at,
             )
             for invite in invites

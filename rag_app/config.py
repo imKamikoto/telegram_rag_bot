@@ -9,38 +9,65 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(env_file="../docker/.env", env_prefix="RAG_", extra="ignore")
 
+    # ─── Database ────────────────────────────────────────────────────────────
     database_url: str = Field(
         default="postgresql+asyncpg://rag_user:rag_password@localhost:5432/rag",
-        description="Async SQLAlchemy DSN with pgvector extension available.",
     )
-    ollama_base_url: str = Field(
-        default="http://localhost:11434", description="Base URL for the Ollama API."
-    )
-    llm_model: str = Field(default="llama3", description="Ollama chat model for generation.")
-    embed_model: str = Field(default="nomic-embed-text", description="Ollama model for embeddings.")
-    embed_dim: int = Field(default=768, description="Embedding dimension for pgvector column.")
 
-    chunk_size: int = Field(default=800, description="Chunk size in characters for PDF splits.")
+    # ─── LLM / Embedding (OpenAI-compatible endpoint) ────────────────────────
+    llm_base_url: str = Field(
+        default="http://localhost:11434/v1",
+        description="Base URL for OpenAI-compatible LLM API (LiteLLM, Ollama, vLLM, etc.)",
+    )
+    llm_api_key: str = Field(
+        default="ollama",
+        description="API key for the LLM provider (use any non-empty string for local Ollama).",
+    )
+    llm_model: str = Field(default="llama3", description="Chat model name.")
+    embed_model: str = Field(default="nomic-embed-text", description="Embedding model name.")
+    embed_base_url: str | None = Field(
+        default=None,
+        description="Override base URL for embedding requests (if different from llm_base_url).",
+    )
+    embed_dim: int = Field(default=768, description="Embedding vector dimension.")
+
+    # ─── RAG pipeline ────────────────────────────────────────────────────────
+    chunk_size: int = Field(default=800, description="Chunk size in characters.")
     chunk_overlap: int = Field(default=100, description="Overlap between chunks in characters.")
-    top_k: int = Field(default=4, description="Number of chunks to retrieve for answering.")
+    top_k: int = Field(default=5, description="Number of chunks to retrieve.")
+    semantic_cache_threshold: float = Field(
+        default=0.92,
+        description="Cosine similarity threshold for semantic cache hit (0–1).",
+    )
 
-    api_prefix: str = Field(default="/api/v1", description="API prefix for versioned routes.")
-    api_host: str = Field(default="0.0.0.0", description="API host binding.")
-    api_port: int = Field(default=8000, description="API port.")
+    # ─── Redis ───────────────────────────────────────────────────────────────
+    redis_url: str = Field(
+        default="redis://localhost:6379/0",
+        description="Redis connection URL.",
+    )
 
+    # ─── MinIO / S3 ──────────────────────────────────────────────────────────
+    minio_endpoint: str = Field(default="localhost:9000")
+    minio_access_key: str = Field(default="minioadmin")
+    minio_secret_key: str = Field(default="minioadmin")
+    minio_bucket: str = Field(default="rag-documents")
+    minio_secure: bool = Field(default=False)
+
+    # ─── API server ──────────────────────────────────────────────────────────
+    api_prefix: str = Field(default="/api/v1")
+    api_host: str = Field(default="0.0.0.0")
+    api_port: int = Field(default=8000)
+
+    # ─── Telegram ────────────────────────────────────────────────────────────
     telegram_bot_token: str | None = Field(
         default=None,
         validation_alias=AliasChoices("RAG_TELEGRAM_BOT_TOKEN", "BOT_TOKEN"),
-        description="Telegram bot token used to validate WebApp init data.",
     )
     admin_telegram_ids: list[int] = Field(
         default_factory=list,
         validation_alias=AliasChoices("RAG_ADMIN_TELEGRAM_IDS", "ADMIN_TELEGRAM_IDS"),
-        description="Comma-separated list of Telegram user IDs allowed to administer the RAG panel.",
     )
-    telegram_init_expire_seconds: int = Field(
-        default=600, description="Max age in seconds for Telegram WebApp init data."
-    )
+    telegram_init_expire_seconds: int = Field(default=600)
 
     @field_validator("admin_telegram_ids", mode="before")
     @classmethod

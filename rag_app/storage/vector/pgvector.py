@@ -34,6 +34,10 @@ class PgVectorStore(VectorStore):
             content=document.content,
             source=document.source,
             active=document.active,
+            knowledge_base_id=document.knowledge_base_id,
+            s3_key=document.s3_key,
+            page_count=document.page_count,
+            status=document.status,
         )
 
         for embedding in embeddings:
@@ -44,7 +48,11 @@ class PgVectorStore(VectorStore):
         return stored_doc
 
     async def similarity_search(
-        self, session: AsyncSession, embedding: Sequence[float], limit: int
+        self,
+        session: AsyncSession,
+        embedding: Sequence[float],
+        limit: int,
+        knowledge_base_id: int | None = None,
     ) -> list[RetrievedChunk]:
         distance_expr = DocumentChunk.embedding.cosine_distance(embedding)
 
@@ -55,6 +63,9 @@ class PgVectorStore(VectorStore):
             .order_by(distance_expr)
             .limit(limit)
         )
+
+        if knowledge_base_id is not None:
+            stmt = stmt.where(Document.knowledge_base_id == knowledge_base_id)
 
         result = await session.execute(stmt)
         rows = result.all()

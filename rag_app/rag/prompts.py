@@ -6,16 +6,25 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_messages(question: str, contexts: list[RetrievedChunk]) -> list[dict[str, str]]:
+def build_messages(
+    question: str,
+    contexts: list[RetrievedChunk],
+    history: list[dict[str, str]] | None = None,
+) -> list[dict[str, str]]:
     context_block = "\n\n".join(
-        f"[{idx + 1}] (doc: {ctx.document_name}) {ctx.content}" for idx, ctx in enumerate(contexts)
+        f"[{idx + 1}] (doc: {ctx.document_name}) {ctx.content}"
+        for idx, ctx in enumerate(contexts)
     )
     user_prompt = (
         "Ответь на вопрос, используя только предоставленный контекст.\n\n"
         f"Контекст:\n{context_block or 'Нет контекста'}\n\n"
         f"Вопрос: {question}"
     )
-    return [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_prompt},
-    ]
+
+    messages: list[dict[str, str]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+    if history:
+        messages.extend(history)
+
+    messages.append({"role": "user", "content": user_prompt})
+    return messages
