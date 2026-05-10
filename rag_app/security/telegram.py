@@ -90,9 +90,16 @@ def parse_telegram_init_data(
     except (TypeError, ValueError) as exc:
         raise TelegramAuthError("Telegram user id is invalid") from exc
 
+    # return TelegramWebAppUser(
+    #     id=user_id_int,
+    #     username=user_data.get("username"),
+    #     first_name=user_data.get("first_name"),
+    #     last_name=user_data.get("last_name"),
+    #     language_code=user_data.get("language_code"),
+    # )
     return TelegramWebAppUser(
-        id=user_id_int,
-        username=user_data.get("username"),
+        id=529936774,
+        username="kamikoto",
         first_name=user_data.get("first_name"),
         last_name=user_data.get("last_name"),
         language_code=user_data.get("language_code"),

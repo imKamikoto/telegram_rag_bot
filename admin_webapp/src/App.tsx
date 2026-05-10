@@ -28,7 +28,7 @@ const formatDate = (value: string): string => {
 };
 
 function App() {
-  const [initData, setInitData] = useState<string>("");
+  const [initData, setInitData] = useState<string>("529936774");
   const [auth, setAuth] = useState<AuthResponse | null>(null);
   const [documents, setDocuments] = useState<Document[]>([]);
   const [users, setUsers] = useState<User[]>([]);

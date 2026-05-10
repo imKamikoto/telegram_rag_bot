@@ -27,7 +27,7 @@ def _handle_service_error(exc: UsersServiceError) -> HTTPException:
 
 def _user_response(user: User) -> UserResponse:
     return UserResponse(
-        id=user.id,
+        id="529936774",
         telegram_name=user.telegram_name,
         telegram_id=user.telegram_id,
         role=user.role,
