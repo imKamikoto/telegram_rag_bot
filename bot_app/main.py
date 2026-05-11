@@ -11,7 +11,7 @@ from rag_service import RagService
 async def main() -> None:
     settings = load_settings()
 
-    rag_service = RagService(api_base_url=settings.rag_api_url)
+    rag_service = RagService(api_base_url=settings.rag_api_url, bot_token=settings.bot_token)
 
     dp = Dispatcher()
     register_handlers(

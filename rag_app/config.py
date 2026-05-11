@@ -52,6 +52,7 @@ class Settings(BaseSettings):
     minio_secret_key: str = Field(default="minioadmin")
     minio_bucket: str = Field(default="rag-documents")
     minio_secure: bool = Field(default=False)
+    minio_public_url: str | None = Field(default=None)
 
     # ─── API server ──────────────────────────────────────────────────────────
     api_prefix: str = Field(default="/api/v1")
@@ -68,6 +69,17 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("RAG_ADMIN_TELEGRAM_IDS", "ADMIN_TELEGRAM_IDS"),
     )
     telegram_init_expire_seconds: int = Field(default=600)
+
+    @field_validator("llm_base_url", "embed_base_url", mode="before")
+    @classmethod
+    def _normalize_base_url(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        url = value.rstrip("/")
+        # OpenAI SDK needs /v1 at the end; add it if missing
+        if url and not url.endswith("/v1"):
+            url = f"{url}/v1"
+        return url
 
     @field_validator("admin_telegram_ids", mode="before")
     @classmethod

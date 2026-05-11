@@ -5,6 +5,7 @@ export type User = {
   telegram_name: string;
   telegram_id: number;
   role: UserRole;
+  created_at?: string;
 };
 
 export type KnowledgeBase = {
