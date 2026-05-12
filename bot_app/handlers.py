@@ -205,7 +205,7 @@ def register_handlers(
         display_name = tg_user.full_name or tg_user.username or "user"
         token = await _get_user_token(tg_user.id, display_name)
         if token is None:
-            await message.answer("Не удалось получить доступ. Попробуйте позже.")
+            await message.answer("Не удалось получить доступ. Обратитесь к администратору.")
             return
         await _show_kb_selection(message, token)
 

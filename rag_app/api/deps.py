@@ -49,7 +49,7 @@ async def get_current_user(
     settings = get_settings()
     cache = RedisCache(settings.redis_url)
     try:
-        token_data = await cache.get_admin_token(token)
+        token_data = await cache.get_token(token)
     finally:
         await cache.close()
 

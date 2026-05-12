@@ -40,7 +40,7 @@ async def generate_user_token(
     token = secrets.token_urlsafe(16)
     cache = RedisCache(settings.redis_url)
     try:
-        await cache.set_admin_token(token, body.telegram_id, body.telegram_name, user.role)
+        await cache.set_token(token, body.telegram_id, body.telegram_name, user.role)
     finally:
         await cache.close()
 
@@ -76,7 +76,7 @@ async def generate_admin_token(
     token = secrets.token_urlsafe(16)
     cache = RedisCache(settings.redis_url)
     try:
-        await cache.set_admin_token(token, body.telegram_id, body.telegram_name, "admin")
+        await cache.set_token(token, body.telegram_id, body.telegram_name, "admin")
     finally:
         await cache.close()
 
