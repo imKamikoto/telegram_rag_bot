@@ -99,6 +99,12 @@ class UserListResponse(BaseModel):
     users: list[UserResponse]
 
 
+class UserCreateRequest(BaseModel):
+    telegram_name: str
+    telegram_id: int
+    role: Literal["user", "admin"] = "user"
+
+
 class UserCreateByInviteRequest(BaseModel):
     invite_code: str
     telegram_name: str

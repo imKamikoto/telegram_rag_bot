@@ -49,7 +49,6 @@ def register_handlers(
         if user is None:
             await message.answer("Нет доступа. Введите /code и пришлите инвайт-код.")
             return False
-        allowed_ids.add(user_id)
         if user.get("role") == "admin":
             admin_ids.add(user_id)
         return True
@@ -121,6 +120,14 @@ def register_handlers(
         if user_id and user_id in allowed_ids:
             await message.answer("Доступ уже активен.", reply_markup=main_keyboard(is_admin=_is_admin(user_id)))
             return
+        if user_id:
+            try:
+                existing = await rag_service.get_user_by_telegram(user_id)
+            except Exception:
+                existing = None
+            if existing is not None:
+                await message.answer("Доступ уже активен.", reply_markup=main_keyboard(is_admin=_is_admin(user_id)))
+                return
         await message.answer("Пришлите инвайт-код:")
         await state.set_state(UserStates.waiting_for_invite)
 
