@@ -37,16 +37,35 @@ def get_pipeline() -> RAGPipeline:
 
 async def get_current_user(
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    x_bot_secret: Optional[str] = Header(default=None, alias="X-Bot-Secret"),
+    x_telegram_id: Optional[str] = Header(default=None, alias="X-Telegram-Id"),
     session: AsyncSession = Depends(get_session),
 ) -> User:
+    settings = get_settings()
+
+    # Bot requests: X-Bot-Secret + X-Telegram-Id
+    if x_bot_secret is not None:
+        if x_bot_secret != settings.telegram_bot_token:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bot secret")
+        if not x_telegram_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="X-Telegram-Id header required")
+        try:
+            tg_id = int(x_telegram_id)
+        except ValueError:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid X-Telegram-Id")
+        service = UserService(session)
+        user = await service.get_user_by_telegram_id(tg_id)
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+        return user
+
+    # Admin webapp requests: Bearer token
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authorization: Bearer <token> header required",
+            detail="Authorization: Bearer <token> or X-Bot-Secret + X-Telegram-Id required",
         )
-
     token = authorization[len("Bearer "):]
-    settings = get_settings()
     cache = RedisCache(settings.redis_url)
     try:
         token_data = await cache.get_token(token)

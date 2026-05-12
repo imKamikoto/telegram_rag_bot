@@ -130,24 +130,28 @@ class RedisCache:
             await self._client.delete(*keys_to_delete)
         await self._client.delete(index_key)
 
-    # ─── Admin tokens ─────────────────────────────────────────────────────────
+    # ─── Tokens ─────────────────────────────────────────────────────────
 
     async def set_token(
         self, token: str, telegram_id: int, telegram_name: str, role: str
     ) -> None:
+        await self.revoke_tokens_for_user(telegram_id)
+
         token_prefix = "admin_token" if role == "admin" else "user_token"
-        user_key = f"{token_prefix}_user:{telegram_id}"
-
-        old_token = await self._client.get(user_key)
-        if old_token:
-            await self._client.delete(f"{token_prefix}:{old_token}")
-
         await self._client.setex(
             f"{token_prefix}:{token}",
             60 * 60,
             json.dumps({"telegram_id": telegram_id, "telegram_name": telegram_name, "role": role}),
         )
-        await self._client.setex(user_key, 60 * 60, token)
+        await self._client.setex(f"{token_prefix}_user:{telegram_id}", 60 * 60, token)
+
+    async def revoke_tokens_for_user(self, telegram_id: int) -> None:
+        for prefix in ("admin_token", "user_token"):
+            user_key = f"{prefix}_user:{telegram_id}"
+            old_token = await self._client.get(user_key)
+            if old_token:
+                await self._client.delete(f"{prefix}:{old_token}")
+            await self._client.delete(user_key)
 
     async def get_token(self, token: str) -> dict[str, Any] | None:
         for prefix in ("admin_token", "user_token"):

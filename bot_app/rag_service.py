@@ -16,22 +16,10 @@ class RagService:
         self.kb_url = f"{base}/knowledge-bases"
         self.document_url = f"{base}/document"
 
-    # ─── Auth ─────────────────────────────────────────────────────────────────
+    def _bot_headers(self, telegram_id: int) -> dict[str, str]:
+        return {"X-Bot-Secret": self._bot_token, "X-Telegram-Id": str(telegram_id)}
 
-    async def generate_user_token(self, telegram_id: int, telegram_name: str) -> str:
-        """Get a short-lived Bearer token for any registered user."""
-        timeout = aiohttp.ClientTimeout(total=15)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(
-                f"{self.auth_url}/user-token",
-                json={"telegram_id": telegram_id, "telegram_name": telegram_name},
-                headers={"X-Bot-Secret": self._bot_token},
-            ) as resp:
-                text = await resp.text()
-                if not resp.ok:
-                    raise RuntimeError(f"RAG API error {resp.status}: {text}")
-                data = await resp.json()
-                return data["token"]
+    # ─── Auth ─────────────────────────────────────────────────────────────────
 
     async def generate_admin_token(self, telegram_id: int, telegram_name: str) -> str:
         """Get a short-lived Bearer token for an admin user (for the admin webapp link)."""
@@ -80,12 +68,10 @@ class RagService:
 
     # ─── Knowledge Bases ──────────────────────────────────────────────────────
 
-    async def get_knowledge_bases(self, bearer_token: str) -> list[dict]:
-        """Return KBs accessible to the token's user."""
+    async def get_knowledge_bases(self, telegram_id: int) -> list[dict]:
         timeout = aiohttp.ClientTimeout(total=15)
-        headers = {"Authorization": f"Bearer {bearer_token}"}
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(self.kb_url, headers=headers) as response:
+            async with session.get(self.kb_url, headers=self._bot_headers(telegram_id)) as response:
                 if response.status != 200:
                     text = await response.text()
                     raise RuntimeError(f"RAG API error {response.status}: {text}")
@@ -98,16 +84,15 @@ class RagService:
         self,
         question: str,
         knowledge_base_id: int,
-        bearer_token: str,
+        telegram_id: int,
         session_id: str | None = None,
     ) -> dict:
         payload: dict = {"question": question, "knowledge_base_id": knowledge_base_id}
         if session_id:
             payload["session_id"] = session_id
         timeout = aiohttp.ClientTimeout(total=180)
-        headers = {"Authorization": f"Bearer {bearer_token}"}
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.post(self.ask_url, json=payload, headers=headers) as response:
+            async with session.post(self.ask_url, json=payload, headers=self._bot_headers(telegram_id)) as response:
                 if response.status != 200:
                     text = await response.text()
                     raise RuntimeError(f"RAG API error {response.status}: {text}")
