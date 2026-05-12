@@ -30,11 +30,13 @@ def register_handlers(
     allowed_ids: Set[int] = set(allowed_user_ids or [])
     admin_ids: Set[int] = set(admin_user_ids or allowed_ids)
 
-    def _is_admin(user_id: int | None) -> bool:
-        return bool(user_id and user_id in admin_ids)
+    async def _get_db_user(user_id: int) -> dict | None:
+        try:
+            return await rag_service.get_user_by_telegram(user_id)
+        except Exception:
+            return None
 
     async def _check_access(message: Message) -> bool:
-        """Return True if user has access, False otherwise (and reply with error)."""
         user_id = message.from_user.id if message.from_user else None
         if user_id is None:
             await message.answer("Не удалось определить ваш telegram_id.")
@@ -49,20 +51,16 @@ def register_handlers(
         if user is None:
             await message.answer("Нет доступа. Введите /code и пришлите инвайт-код.")
             return False
-        allowed_ids.add(user_id)
-        if user.get("role") == "admin":
-            admin_ids.add(user_id)
         return True
 
-    async def _get_user_token(tg_id: int, display_name: str) -> str | None:
-        try:
-            return await rag_service.generate_user_token(tg_id, display_name)
-        except Exception:
-            return None
+    def _is_admin(user_id: int | None, db_user: dict | None = None) -> bool:
+        if user_id and user_id in admin_ids:
+            return True
+        return db_user is not None and db_user.get("role") == "admin"
 
-    async def _show_kb_selection(message: Message, bearer_token: str) -> None:
+    async def _show_kb_selection(message: Message, telegram_id: int) -> None:
         try:
-            kbs = await rag_service.get_knowledge_bases(bearer_token)
+            kbs = await rag_service.get_knowledge_bases(telegram_id)
         except Exception as exc:
             await message.answer(f"Не удалось загрузить базы знаний: {exc}")
             return
@@ -89,7 +87,8 @@ def register_handlers(
         if tg_user is None:
             return
 
-        is_admin = _is_admin(tg_user.id)
+        db_user = await _get_db_user(tg_user.id)
+        is_admin = _is_admin(tg_user.id, db_user)
         hint = "/kb — выбрать базу знаний\n/reset — очистить контекст диалога"
         if is_admin:
             hint += "\n/admin — открыть панель администратора"
@@ -121,6 +120,11 @@ def register_handlers(
         if user_id and user_id in allowed_ids:
             await message.answer("Доступ уже активен.", reply_markup=main_keyboard(is_admin=_is_admin(user_id)))
             return
+        if user_id:
+            existing = await _get_db_user(user_id)
+            if existing is not None:
+                await message.answer("Доступ уже активен.", reply_markup=main_keyboard(is_admin=_is_admin(user_id, existing)))
+                return
         await message.answer("Пришлите инвайт-код:")
         await state.set_state(UserStates.waiting_for_invite)
 
@@ -143,17 +147,11 @@ def register_handlers(
             await message.answer(f"Инвайт не принят: {exc}")
             return
 
-        allowed_ids.add(tg_user.id)
-        if created.get("role") == "admin":
-            admin_ids.add(tg_user.id)
-
         is_new_admin = created.get("role") == "admin"
         await state.clear()
         await message.answer("✅ Доступ активирован!", reply_markup=main_keyboard(is_admin=is_new_admin))
 
-        token = await _get_user_token(tg_user.id, display_name)
-        if token:
-            await _show_kb_selection(message, token)
+        await _show_kb_selection(message, tg_user.id)
 
     # ─── /admin ───────────────────────────────────────────────────────────────
 
@@ -162,7 +160,10 @@ def register_handlers(
         if not await _check_access(message):
             return
         tg_user = message.from_user
-        if not _is_admin(tg_user.id if tg_user else None):
+        if tg_user is None:
+            return
+        db_user = await _get_db_user(tg_user.id)
+        if not _is_admin(tg_user.id, db_user):
             await message.answer("Недостаточно прав.")
             return
         if not admin_webapp_url:
@@ -195,12 +196,7 @@ def register_handlers(
         tg_user = message.from_user
         if tg_user is None:
             return
-        display_name = tg_user.full_name or tg_user.username or "user"
-        token = await _get_user_token(tg_user.id, display_name)
-        if token is None:
-            await message.answer("Не удалось получить доступ. Попробуйте позже.")
-            return
-        await _show_kb_selection(message, token)
+        await _show_kb_selection(message, tg_user.id)
 
     @dp.callback_query(F.data.startswith("kb:"))
     async def select_kb(callback: CallbackQuery, state: FSMContext) -> None:
@@ -223,8 +219,9 @@ def register_handlers(
         if not await _check_access(message):
             return
         user_id = message.from_user.id if message.from_user else None
+        db_user = await _get_db_user(user_id) if user_id else None
         await state.update_data(session_id=None)
-        await message.answer("Контекст очищен.", reply_markup=main_keyboard(is_admin=_is_admin(user_id)))
+        await message.answer("Контекст очищен.", reply_markup=main_keyboard(is_admin=_is_admin(user_id, db_user)))
 
     # ─── Текстовые сообщения → RAG ask ───────────────────────────────────────
 
@@ -245,18 +242,7 @@ def register_handlers(
         kb_id: int | None = data.get("kb_id")
 
         if kb_id is None:
-            display_name = tg_user.full_name or tg_user.username or "user"
-            token = await _get_user_token(tg_user.id, display_name)
-            if token:
-                await _show_kb_selection(message, token)
-            else:
-                await message.answer("База знаний не выбрана. Используйте /kb.")
-            return
-
-        display_name = tg_user.full_name or tg_user.username or "user"
-        token = await _get_user_token(tg_user.id, display_name)
-        if token is None:
-            await message.answer("Не удалось получить доступ. Попробуйте позже.")
+            await _show_kb_selection(message, tg_user.id)
             return
 
         session_id: str | None = data.get("session_id")
@@ -264,7 +250,7 @@ def register_handlers(
 
         try:
             result = await rag_service.ask(
-                text, knowledge_base_id=kb_id, bearer_token=token, session_id=session_id
+                text, knowledge_base_id=kb_id, telegram_id=tg_user.id, session_id=session_id
             )
         except Exception as exc:
             await message.answer(f"Ошибка при запросе к RAG: {exc}")
@@ -275,7 +261,7 @@ def register_handlers(
         if new_session_id:
             await state.update_data(session_id=new_session_id)
 
-        is_admin = _is_admin(tg_user.id)
+        is_admin = _is_admin(tg_user.id, await _get_db_user(tg_user.id))
         if len(answer) > 4000:
             for i in range(0, len(answer), 4000):
                 await message.answer(answer[i: i + 4000])

@@ -17,35 +17,6 @@ class AdminTokenRequest(BaseModel):
     telegram_name: str
 
 
-class UserTokenRequest(BaseModel):
-    telegram_id: int
-    telegram_name: str
-
-
-@router.post("/user-token", summary="Short-lived token for any registered user (bot use only)")
-async def generate_user_token(
-    body: UserTokenRequest,
-    x_bot_secret: str = Header(..., alias="X-Bot-Secret"),
-    session: AsyncSession = Depends(get_session),
-) -> dict:
-    settings = get_settings()
-    if x_bot_secret != settings.telegram_bot_token:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bot secret")
-
-    service = UserService(session)
-    user = await service.get_user_by_telegram_id(body.telegram_id)
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    token = secrets.token_urlsafe(16)
-    cache = RedisCache(settings.redis_url)
-    try:
-        await cache.set_admin_token(token, body.telegram_id, body.telegram_name, user.role)
-    finally:
-        await cache.close()
-
-    return {"token": token}
-
 
 @router.post("/admin-token")
 async def generate_admin_token(
@@ -58,25 +29,30 @@ async def generate_admin_token(
     if x_bot_secret != settings.telegram_bot_token:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid bot secret")
 
-    if body.telegram_id not in set(settings.admin_telegram_ids):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an admin")
-
     service = UserService(session)
     user = await service.get_user_by_telegram_id(body.telegram_id)
+
+    is_config_admin = body.telegram_id in set(settings.admin_telegram_ids)
+
     if user is None:
+        if not is_config_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an admin")
         user = await service.create_user(
             telegram_name=body.telegram_name,
             telegram_id=body.telegram_id,
             role="admin",
         )
     elif user.role != "admin":
+        if not is_config_admin:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not an admin")
         user.role = "admin"
         await session.commit()
 
     token = secrets.token_urlsafe(16)
     cache = RedisCache(settings.redis_url)
     try:
-        await cache.set_admin_token(token, body.telegram_id, body.telegram_name, "admin")
+        await cache.revoke_tokens_for_user(body.telegram_id)
+        await cache.set_token(token, body.telegram_id, body.telegram_name, "admin")
     finally:
         await cache.close()
 

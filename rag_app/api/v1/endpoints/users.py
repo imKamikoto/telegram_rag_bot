@@ -11,6 +11,7 @@ from rag_app.api.v1.schemas import (
     InviteCodeListResponse,
     InviteCodeResponse,
     UserCreateByInviteRequest,
+    UserCreateRequest,
     UserDeleteRequest,
     UserResponse,
     UserListResponse,
@@ -39,6 +40,25 @@ def _user_response(user: User) -> UserResponse:
 @router.get("/me", response_model=AuthResponse, summary="Get current Telegram WebApp user")
 async def get_me(current_user: User = Depends(get_current_user)) -> AuthResponse:
     return AuthResponse(user=_user_response(current_user), is_admin=current_user.role == "admin")
+
+
+@router.post("/direct", response_model=UserResponse, summary="Create user directly (admin)")
+async def create_user_direct_endpoint(
+    payload: UserCreateRequest,
+    session: AsyncSession = Depends(get_session),
+    _: object = Depends(require_admin_user),
+) -> UserResponse:
+    service = UserService(session)
+    try:
+        user = await service.create_user(
+            telegram_name=payload.telegram_name,
+            telegram_id=payload.telegram_id,
+            role=payload.role,
+        )
+    except UsersServiceError as exc:
+        raise _handle_service_error(exc) from exc
+
+    return _user_response(user)
 
 
 @router.post(
@@ -166,4 +186,32 @@ async def get_user_by_telegram_id(
     user = await service.get_user_by_telegram_id(telegram_id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    return _user_response(user)
+
+
+@router.get("/{user_id}", response_model=UserResponse, summary="Get user by id")
+async def get_user_by_id_endpoint(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: object = Depends(require_admin_user),
+) -> UserResponse:
+    service = UserService(session)
+    user = await service.get_user_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _user_response(user)
+
+
+@router.delete("/{user_id}", response_model=UserResponse, summary="Delete user by id")
+async def delete_user_by_id_endpoint(
+    user_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: object = Depends(require_admin_user),
+) -> UserResponse:
+    service = UserService(session)
+    try:
+        user = await service.delete_user_by_id(user_id)
+    except UsersServiceError as exc:
+        raise _handle_service_error(exc) from exc
+
     return _user_response(user)

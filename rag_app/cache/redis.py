@@ -130,27 +130,38 @@ class RedisCache:
             await self._client.delete(*keys_to_delete)
         await self._client.delete(index_key)
 
-    # ─── Admin tokens ─────────────────────────────────────────────────────────
+    # ─── Tokens ─────────────────────────────────────────────────────────
 
-    async def set_admin_token(
+    async def set_token(
         self, token: str, telegram_id: int, telegram_name: str, role: str
     ) -> None:
-        key = f"admin_token:{token}"
+        await self.revoke_tokens_for_user(telegram_id)
+
+        token_prefix = "admin_token" if role == "admin" else "user_token"
         await self._client.setex(
-            key,
-            60 * 60,  # 1 hour
+            f"{token_prefix}:{token}",
+            60 * 60,
             json.dumps({"telegram_id": telegram_id, "telegram_name": telegram_name, "role": role}),
         )
+        await self._client.setex(f"{token_prefix}_user:{telegram_id}", 60 * 60, token)
 
-    async def get_admin_token(self, token: str) -> dict[str, Any] | None:
-        key = f"admin_token:{token}"
-        raw = await self._client.get(key)
-        if raw is None:
-            return None
-        try:
-            return json.loads(raw)
-        except (json.JSONDecodeError, TypeError):
-            return None
+    async def revoke_tokens_for_user(self, telegram_id: int) -> None:
+        for prefix in ("admin_token", "user_token"):
+            user_key = f"{prefix}_user:{telegram_id}"
+            old_token = await self._client.get(user_key)
+            if old_token:
+                await self._client.delete(f"{prefix}:{old_token}")
+            await self._client.delete(user_key)
+
+    async def get_token(self, token: str) -> dict[str, Any] | None:
+        for prefix in ("admin_token", "user_token"):
+            raw = await self._client.get(f"{prefix}:{token}")
+            if raw is not None:
+                try:
+                    return json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    return None
+        return None
 
     async def close(self) -> None:
         await self._client.close()
