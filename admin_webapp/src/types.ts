@@ -6,6 +6,7 @@ export type User = {
   telegram_id: number;
   role: UserRole;
   created_at?: string;
+  kb_ids?: number[];
 };
 
 export type KnowledgeBase = {
@@ -30,6 +31,9 @@ export type Document = {
   status: string;
   knowledge_base_id: number | null;
   created_at: string;
+  page_count: number | null;
+  chunk_count: number;
+  content_length: number;
 };
 
 export type InviteCode = {
@@ -73,4 +77,48 @@ export type UserListResponse = {
 
 export type InviteCodeListResponse = {
   invite_codes: InviteCode[];
+};
+
+export type StatsCountStat = { total: number; week: number };
+
+export type StatsOverview = {
+  knowledge_bases: StatsCountStat;
+  documents: StatsCountStat;
+  users: StatsCountStat;
+  queries_today: number;
+};
+
+export type StatsTopKb = { kb_id: number; name: string; query_count: number };
+
+export type StatsActivityItem = {
+  event: string;
+  actor_id: number | null;
+  target_user_id: number | null;
+  knowledge_base_id: number | null;
+  document_id: number | null;
+  meta: Record<string, unknown>;
+  created_at: string;
+};
+
+export type StatsResponse = {
+  overview: StatsOverview;
+  top_kbs: StatsTopKb[];
+  activity: StatsActivityItem[];
+};
+
+export type ServiceHealth = {
+  ok: boolean;
+  latency_ms?: number;
+  error?: string;
+  note?: string;
+  objects?: number;
+  size_mb?: number;
+  status_code?: number;
+};
+
+export type ServicesHealthResponse = {
+  pgvector: ServiceHealth;
+  llm:      ServiceHealth;
+  embed:    ServiceHealth;
+  minio:    ServiceHealth;
 };

@@ -11,7 +11,7 @@ from rag_app.api.v1.schemas import (
 from rag_app.db.models import Document
 from rag_app.db.session import get_session
 from rag_app.rag.pipeline import RAGPipeline
-from rag_app.services.documents import DocumentService, DocumentServiceError
+from rag_app.services.documents import DocumentChunkService, DocumentService, DocumentServiceError
 
 router = APIRouter()
 
@@ -26,7 +26,7 @@ SUPPORTED_MIME_TYPES = {
 }
 
 
-def _doc_response(doc: Document) -> DocumentResponse:
+def _doc_response(doc: Document, chunk_count: int = 0) -> DocumentResponse:
     return DocumentResponse(
         id=doc.id,
         file_name=doc.file_name,
@@ -35,6 +35,9 @@ def _doc_response(doc: Document) -> DocumentResponse:
         status=doc.status,
         knowledge_base_id=doc.knowledge_base_id,
         created_at=doc.created_at,
+        page_count=doc.page_count,
+        chunk_count=chunk_count,
+        content_length=len(doc.content) if doc.content else 0,
     )
 
 
@@ -55,14 +58,14 @@ def _detect_format(filename: str, content_type: str) -> str:
     raise ValueError(f"Неподдерживаемый формат файла: {filename}")
 
 
-@router.post("/file", response_model=IngestResponse, summary="Upload and index a document (PDF/DOCX/MD)")
-async def ingest_file(
+@router.post("/file", response_model=DocumentResponse, summary="Upload a document (parse + MinIO, no indexing)")
+async def upload_file(
     file: UploadFile = File(...),
     knowledge_base_id: int | None = Form(default=None),
     session: AsyncSession = Depends(get_session),
     pipeline: RAGPipeline = Depends(get_pipeline),
     _: object = Depends(require_admin_user),
-) -> IngestResponse:
+) -> DocumentResponse:
     try:
         fmt = _detect_format(file.filename or "", file.content_type or "")
     except ValueError as exc:
@@ -70,9 +73,24 @@ async def ingest_file(
 
     file_bytes = await file.read()
     try:
-        result = await pipeline.ingest_file(
+        doc = await pipeline.upload_file(
             session, file.filename or "document", file_bytes, fmt, knowledge_base_id=knowledge_base_id
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return _doc_response(doc)
+
+
+@router.post("/{document_id}/index", response_model=IngestResponse, summary="Index an uploaded document")
+async def index_document(
+    document_id: int,
+    session: AsyncSession = Depends(get_session),
+    pipeline: RAGPipeline = Depends(get_pipeline),
+    _: object = Depends(require_admin_user),
+) -> IngestResponse:
+    try:
+        result = await pipeline.index_document(session, document_id)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -114,7 +132,7 @@ async def update_document_active(
     return _doc_response(doc)
 
 
-@router.get("", response_model=DocumentListResponse, summary="List indexed documents")
+@router.get("", response_model=DocumentListResponse, summary="List documents")
 async def list_documents(
     limit: int = 100,
     offset: int = 0,
@@ -124,4 +142,5 @@ async def list_documents(
 ) -> DocumentListResponse:
     service = DocumentService(session)
     docs = await service.list_documents(limit=limit, offset=offset, knowledge_base_id=knowledge_base_id)
-    return DocumentListResponse(documents=[_doc_response(doc) for doc in docs])
+    chunk_counts = await DocumentChunkService(session).get_chunk_counts([d.id for d in docs])
+    return DocumentListResponse(documents=[_doc_response(doc, chunk_counts.get(doc.id, 0)) for doc in docs])

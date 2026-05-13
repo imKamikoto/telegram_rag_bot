@@ -176,6 +176,30 @@ class ChatSession(Base):
     )
 
 
+class ActivityLog(Base):
+    __tablename__ = "activity_log"
+    __table_args__ = (Index("ix_activity_log_created_at", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    event: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    target_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    knowledge_base_id: Mapped[int | None] = mapped_column(
+        ForeignKey("knowledge_bases.id", ondelete="SET NULL"), nullable=True
+    )
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True
+    )
+    meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
     __table_args__ = (Index("ix_chat_messages_session_id", "session_id"),)

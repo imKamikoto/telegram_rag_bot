@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rag_app.config import Settings
 from rag_app.db.models import Document
 from rag_app.rag.chunking import chunk_text
+from rag_app.services.documents import DocumentChunkService, DocumentService
 from rag_app.rag.prompts import build_messages
 from rag_app.rag.retriever import Retriever
 from rag_app.storage.vector import RetrievedChunk, VectorStore
@@ -39,23 +40,18 @@ class RAGPipeline:
 
     # ─── Ingest ──────────────────────────────────────────────────────────────
 
-    async def ingest_file(
+    async def upload_file(
         self,
         session: AsyncSession,
         file_name: str,
         file_bytes: bytes,
         fmt: str,
         knowledge_base_id: int | None = None,
-    ) -> dict[str, Any]:
+    ) -> Document:
+        """Parse + upload to MinIO, save to DB with status='pending'. No embedding."""
         text = await asyncio.to_thread(self._parse_file, file_bytes, fmt)
         if not text.strip():
             raise ValueError("Не удалось извлечь текст из документа")
-
-        chunks = chunk_text(text, self.settings.chunk_size, self.settings.chunk_overlap)
-        if not chunks:
-            raise ValueError("Нет текста для индексации после разбиения на чанки")
-
-        embeddings = [await self._embed(chunk) for chunk in chunks]
 
         s3_key: str | None = None
         if self.minio is not None:
@@ -65,22 +61,54 @@ class RAGPipeline:
                 knowledge_base_id=knowledge_base_id,
             )
 
-        document = Document(
+        page_count = await asyncio.to_thread(self._count_pages, file_bytes, fmt)
+
+        doc_service = DocumentService(session)
+        return await doc_service.create_document(
             file_name=file_name,
             content=text,
             knowledge_base_id=knowledge_base_id,
             s3_key=s3_key,
-            status="ready",
+            status="pending",
+            page_count=page_count,
         )
-        stored = await self.vector_store.add_document(session, document, chunks, embeddings)
 
-        if self.cache is not None and knowledge_base_id is not None:
-            await self.cache.invalidate_kb_cache(knowledge_base_id)
+    async def index_document(
+        self,
+        session: AsyncSession,
+        document_id: int,
+    ) -> dict[str, Any]:
+        """Chunk, embed, and write vectors for an already-uploaded document."""
+        doc_service = DocumentService(session)
+        document = await doc_service.get_document_by_id(document_id)
+        if document is None:
+            raise ValueError("Документ не найден")
+        if not document.content.strip():
+            raise ValueError("Документ не содержит текста для индексации")
+
+        await doc_service.update_status(document_id, "indexing")
+
+        chunks = chunk_text(document.content, self.settings.chunk_size, self.settings.chunk_overlap)
+        if not chunks:
+            await doc_service.update_status(document_id, "pending")
+            raise ValueError("Нет текста после разбиения на чанки")
+
+        embeddings = [await self._embed(chunk) for chunk in chunks]
+
+        chunk_service = DocumentChunkService(session)
+        await chunk_service.create_chunks_bulk(document_id, chunks, embeddings)
+
+        document.status = "ready"
+        document.active = True
+        await session.commit()
+
+        if self.cache is not None and document.knowledge_base_id is not None:
+            await self.cache.invalidate_kb_cache(document.knowledge_base_id)
 
         return {
-            "document_id": stored.id,
+            "document_id": document_id,
             "chunks_indexed": len(chunks),
-            "knowledge_base_id": knowledge_base_id,
+            "knowledge_base_id": document.knowledge_base_id,
         }
 
     # ─── Ask ─────────────────────────────────────────────────────────────────
@@ -188,6 +216,17 @@ class RAGPipeline:
                 except Exception:
                     pass
         return contexts
+
+    @staticmethod
+    def _count_pages(file_bytes: bytes, fmt: str) -> int | None:
+        if fmt == "pdf":
+            try:
+                from io import BytesIO
+                from pypdf import PdfReader
+                return len(PdfReader(BytesIO(file_bytes)).pages)
+            except Exception:
+                return None
+        return None
 
     @staticmethod
     def _parse_file(file_bytes: bytes, fmt: str) -> str:

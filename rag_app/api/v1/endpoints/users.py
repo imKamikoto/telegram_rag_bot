@@ -1,6 +1,7 @@
 from typing import Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rag_app.api.deps import get_current_user, require_admin_user
@@ -17,8 +18,9 @@ from rag_app.api.v1.schemas import (
     UserListResponse,
     UserRoleUpdateRequest,
 )
-from rag_app.db.models import User
+from rag_app.db.models import User, UserKnowledgeBase
 from rag_app.db.session import get_session
+from rag_app.services.stats import StatsService
 from rag_app.services.users import UserService, UsersServiceError
 
 router = APIRouter()
@@ -28,12 +30,13 @@ def _handle_service_error(exc: UsersServiceError) -> HTTPException:
     return HTTPException(status_code=int(exc.status_code), detail=exc.message)
 
 
-def _user_response(user: User) -> UserResponse:
+def _user_response(user: User, kb_ids: list[int] | None = None) -> UserResponse:
     return UserResponse(
         id=user.id,
         telegram_name=user.telegram_name,
         telegram_id=user.telegram_id,
         role=cast(Literal["user", "admin"], user.role),
+        kb_ids=kb_ids or [],
     )
 
 
@@ -75,6 +78,7 @@ async def create_invite_code_endpoint(
         invite = await service.create_invite_code(
             max_uses=payload.max_uses if payload else None,
             knowledge_base_id=payload.knowledge_base_id if payload else None,
+            code=payload.code if payload else None,
         )
     except UsersServiceError as exc:
         raise _handle_service_error(exc) from exc
@@ -135,7 +139,7 @@ async def update_user_role_endpoint(
     user_id: int,
     payload: UserRoleUpdateRequest,
     session: AsyncSession = Depends(get_session),
-    _: object = Depends(require_admin_user),
+    current_user: User = Depends(require_admin_user),
 ) -> UserResponse:
     service = UserService(session)
     try:
@@ -143,6 +147,12 @@ async def update_user_role_endpoint(
     except UsersServiceError as exc:
         raise _handle_service_error(exc) from exc
 
+    await StatsService(session).log(
+        "role_changed",
+        actor_id=current_user.id,
+        target_user_id=user.id,
+        meta={"new_role": payload.role},
+    )
     return _user_response(user)
 
 
@@ -170,7 +180,18 @@ async def list_users_endpoint(
 ) -> UserListResponse:
     service = UserService(session)
     users = await service.list_users(limit=limit, offset=offset)
-    return UserListResponse(users=[_user_response(user) for user in users])
+
+    # Batch-load KB memberships for all users
+    user_ids = [u.id for u in users]
+    kb_rows = await session.execute(
+        select(UserKnowledgeBase.user_id, UserKnowledgeBase.knowledge_base_id)
+        .where(UserKnowledgeBase.user_id.in_(user_ids))
+    )
+    kb_map: dict[int, list[int]] = {}
+    for row in kb_rows.all():
+        kb_map.setdefault(row.user_id, []).append(row.knowledge_base_id)
+
+    return UserListResponse(users=[_user_response(u, kb_map.get(u.id, [])) for u in users])
 
 
 @router.get(

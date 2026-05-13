@@ -24,7 +24,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 async def init_db() -> None:
     from rag_app.db.models import (  # noqa: F401
         Document, DocumentChunk, InviteCode, User,
-        KnowledgeBase, UserKnowledgeBase, ChatSession, ChatMessage,
+        KnowledgeBase, UserKnowledgeBase, ChatSession, ChatMessage, ActivityLog,
     )
 
     async with engine.begin() as conn:

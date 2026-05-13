@@ -53,6 +53,9 @@ class DocumentResponse(BaseModel):
     status: str
     knowledge_base_id: int | None
     created_at: datetime
+    page_count: int | None = None
+    chunk_count: int = 0
+    content_length: int = 0
 
 
 class DocumentActiveUpdateRequest(BaseModel):
@@ -93,6 +96,7 @@ class UserResponse(BaseModel):
     telegram_name: str
     telegram_id: int
     role: Literal["user", "admin"]
+    kb_ids: list[int] = Field(default_factory=list)
 
 
 class UserListResponse(BaseModel):
@@ -130,6 +134,7 @@ class AuthResponse(BaseModel):
 class InviteCodeCreateRequest(BaseModel):
     max_uses: int | None = Field(default=None, ge=1)
     knowledge_base_id: int | None = None
+    code: str | None = None  # если передан — использовать его, иначе сгенерировать
 
 
 class InviteCodeResponse(BaseModel):
@@ -149,3 +154,39 @@ class InviteCodeInfo(BaseModel):
 
 class InviteCodeListResponse(BaseModel):
     invite_codes: list[InviteCodeInfo]
+
+
+# ─── Stats ───────────────────────────────────────────────────────────────────
+
+class StatsCountStat(BaseModel):
+    total: int
+    week: int
+
+
+class StatsOverview(BaseModel):
+    knowledge_bases: StatsCountStat
+    documents: StatsCountStat
+    users: StatsCountStat
+    queries_today: int
+
+
+class StatsTopKb(BaseModel):
+    kb_id: int
+    name: str
+    query_count: int
+
+
+class StatsActivityItem(BaseModel):
+    event: str
+    actor_id: int | None
+    target_user_id: int | None
+    knowledge_base_id: int | None
+    document_id: int | None
+    meta: dict
+    created_at: str
+
+
+class StatsOverviewResponse(BaseModel):
+    overview: StatsOverview
+    top_kbs: list[StatsTopKb]
+    activity: list[StatsActivityItem]
