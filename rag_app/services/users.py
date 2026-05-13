@@ -29,6 +29,7 @@ class UserService:
         self,
         max_uses: int | None = None,
         knowledge_base_id: int | None = None,
+        code: str | None = None,
     ) -> InviteCode:
         if max_uses is not None and max_uses <= 0:
             raise UsersServiceError(HTTPStatus.BAD_REQUEST, "max_uses должен быть больше нуля")
@@ -36,7 +37,7 @@ class UserService:
         expires_at = datetime.now(timezone.utc) + timedelta(days=INVITE_CODE_TTL_DAYS)
 
         for _ in range(5):
-            code = self._generate_invite_code()
+            code = code or self._generate_invite_code()
             invite = InviteCode(
                 code=code,
                 max_uses=max_uses,

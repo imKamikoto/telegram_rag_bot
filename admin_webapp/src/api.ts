@@ -88,14 +88,17 @@ export const fetchDocuments = (kbId?: number): Promise<DocumentListResponse> => 
   return apiRequest<DocumentListResponse>(`/document${qs}`, { method: "GET" });
 };
 
-export const uploadFile = (file: File, knowledgeBaseId?: number): Promise<IngestResponse> => {
+export const uploadFile = (file: File, knowledgeBaseId?: number): Promise<Document> => {
   const form = new FormData();
   form.append("file", file);
   if (knowledgeBaseId !== undefined) {
     form.append("knowledge_base_id", String(knowledgeBaseId));
   }
-  return apiRequest<IngestResponse>("/document/file", { method: "POST", body: form });
+  return apiRequest<Document>("/document/file", { method: "POST", body: form });
 };
+
+export const indexDocument = (documentId: number): Promise<IngestResponse> =>
+  apiRequest<IngestResponse>(`/document/${documentId}/index`, { method: "POST" });
 
 export const toggleDocumentActive = (documentId: number, active: boolean): Promise<Document> =>
   apiRequest<Document>(
@@ -128,7 +131,7 @@ export const deleteUser = (telegramId: number): Promise<User> =>
 export const fetchInviteCodes = (): Promise<InviteCodeListResponse> =>
   apiRequest<InviteCodeListResponse>("/users/invite-codes", { method: "GET" });
 
-export const createInviteCode = (maxUses?: number, knowledgeBaseId?: number): Promise<{ code: string }> =>
+export const createInviteCode = (maxUses?: number, knowledgeBaseId?: number, code?: string): Promise<{ code: string }> =>
   apiRequest<{ code: string }>(
     "/users/invite-codes",
     {
@@ -136,6 +139,17 @@ export const createInviteCode = (maxUses?: number, knowledgeBaseId?: number): Pr
       body: JSON.stringify({
         ...(typeof maxUses === "number" && maxUses > 0 ? { max_uses: maxUses } : {}),
         ...(knowledgeBaseId !== undefined ? { knowledge_base_id: knowledgeBaseId } : {}),
+        ...(code ? { code } : {}),
       }),
     },
   );
+
+// ─── Stats ────────────────────────────────────────────────────────────────────
+
+export const fetchStats = (): Promise<import("./types").StatsResponse> =>
+  apiRequest<import("./types").StatsResponse>("/stats", { method: "GET" });
+
+// ─── Health ───────────────────────────────────────────────────────────────────
+
+export const fetchHealthServices = (): Promise<import("./types").ServicesHealthResponse> =>
+  apiRequest<import("./types").ServicesHealthResponse>("/health/services", { method: "GET" });

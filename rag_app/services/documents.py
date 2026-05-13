@@ -1,7 +1,7 @@
 from http import HTTPStatus
 from typing import Optional, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rag_app.db.models import Document, DocumentChunk
@@ -68,6 +68,15 @@ class DocumentService:
         await self.session.commit()
         return document
 
+    async def update_status(self, document_id: int, status: str) -> Document:
+        document = await self.get_document_by_id(document_id)
+        if document is None:
+            raise DocumentServiceError(HTTPStatus.NOT_FOUND, "Документ не найден")
+        document.status = status
+        await self.session.commit()
+        await self.session.refresh(document)
+        return document
+
     async def set_active(self, document_id: int, active: bool) -> Document:
         document = await self.get_document_by_id(document_id)
         if document is None:
@@ -121,6 +130,16 @@ class DocumentChunkService:
         self.session.add_all(rows)
         await self.session.commit()
         return rows
+
+    async def get_chunk_counts(self, document_ids: list[int]) -> dict[int, int]:
+        if not document_ids:
+            return {}
+        result = await self.session.execute(
+            select(DocumentChunk.document_id, func.count().label("cnt"))
+            .where(DocumentChunk.document_id.in_(document_ids))
+            .group_by(DocumentChunk.document_id)
+        )
+        return {row.document_id: row.cnt for row in result}
 
     async def get_chunk_by_id(self, chunk_id: int) -> Optional[DocumentChunk]:
         return await self.session.scalar(select(DocumentChunk).where(DocumentChunk.id == chunk_id))

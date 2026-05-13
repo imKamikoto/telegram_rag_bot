@@ -14,6 +14,7 @@ from rag_app.api.v1.schemas import (
 from rag_app.db.models import User
 from rag_app.db.session import get_session
 from rag_app.services.knowledge_bases import KnowledgeBaseService, KnowledgeBaseServiceError
+from rag_app.services.stats import StatsService
 
 router = APIRouter()
 
@@ -47,6 +48,13 @@ async def create_knowledge_base(
         )
     except KnowledgeBaseServiceError as exc:
         raise _handle_kb_error(exc) from exc
+
+    await StatsService(session).log(
+        "kb_created",
+        actor_id=current_user.id,
+        knowledge_base_id=kb.id,
+        meta={"name": kb.name},
+    )
     return _kb_response(kb)
 
 
@@ -123,13 +131,20 @@ async def add_kb_member(
     kb_id: int,
     payload: KBAccessRequest,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(require_admin_user),
+    current_user: User = Depends(require_admin_user),
 ) -> KBMemberResponse:
     service = KnowledgeBaseService(session)
     try:
         access = await service.grant_access(user_id=payload.user_id, kb_id=kb_id)
     except KnowledgeBaseServiceError as exc:
         raise _handle_kb_error(exc) from exc
+
+    await StatsService(session).log(
+        "kb_access_granted",
+        actor_id=current_user.id,
+        target_user_id=payload.user_id,
+        knowledge_base_id=kb_id,
+    )
     return KBMemberResponse(
         user_id=access.user_id,
         knowledge_base_id=access.knowledge_base_id,
@@ -142,10 +157,17 @@ async def remove_kb_member(
     kb_id: int,
     user_id: int,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(require_admin_user),
+    current_user: User = Depends(require_admin_user),
 ) -> None:
     service = KnowledgeBaseService(session)
     try:
         await service.revoke_access(user_id=user_id, kb_id=kb_id)
     except KnowledgeBaseServiceError as exc:
         raise _handle_kb_error(exc) from exc
+
+    await StatsService(session).log(
+        "kb_access_revoked",
+        actor_id=current_user.id,
+        target_user_id=user_id,
+        knowledge_base_id=kb_id,
+    )
