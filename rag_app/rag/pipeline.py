@@ -1,19 +1,23 @@
 import asyncio
+import logging
+import time
 import uuid
 from io import BytesIO
 from typing import Any
 
-from openai import AsyncOpenAI
 from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rag_app.config import Settings
 from rag_app.db.models import Document
 from rag_app.rag.chunking import chunk_text
+from rag_app.rag.llm_client import LLMClient
 from rag_app.services.documents import DocumentChunkService, DocumentService
 from rag_app.rag.prompts import build_messages
 from rag_app.rag.retriever import Retriever
 from rag_app.storage.vector import RetrievedChunk, VectorStore
+
+logger = logging.getLogger("rag.pipeline")
 
 MAX_HISTORY_MESSAGES = 10
 
@@ -24,14 +28,12 @@ class RAGPipeline:
         self.vector_store = vector_store
         self.retriever = Retriever(vector_store, settings.top_k)
 
-        self._llm = AsyncOpenAI(
-            base_url=settings.llm_base_url,
+        self._client = LLMClient(
+            llm_base_url=settings.llm_base_url,
+            embed_base_url=settings.embed_base_url or settings.llm_base_url,
             api_key=settings.llm_api_key,
-        )
-        embed_url = settings.embed_base_url or settings.llm_base_url
-        self._embed_client = AsyncOpenAI(
-            base_url=embed_url,
-            api_key=settings.llm_api_key,
+            llm_model=settings.llm_model,
+            embed_model=settings.embed_model,
         )
 
         # Injected after construction (set in deps.py)
@@ -79,6 +81,7 @@ class RAGPipeline:
         document_id: int,
     ) -> dict[str, Any]:
         """Chunk, embed, and write vectors for an already-uploaded document."""
+        logger.info("index_document | doc_id=%d | start", document_id)
         doc_service = DocumentService(session)
         document = await doc_service.get_document_by_id(document_id)
         if document is None:
@@ -93,6 +96,7 @@ class RAGPipeline:
             await doc_service.update_status(document_id, "pending")
             raise ValueError("Нет текста после разбиения на чанки")
 
+        logger.info("index_document | doc_id=%d | chunks=%d | embedding...", document_id, len(chunks))
         embeddings = [await self._embed(chunk) for chunk in chunks]
 
         chunk_service = DocumentChunkService(session)
@@ -105,6 +109,7 @@ class RAGPipeline:
         if self.cache is not None and document.knowledge_base_id is not None:
             await self.cache.invalidate_kb_cache(document.knowledge_base_id)
 
+        logger.info("index_document | doc_id=%d | done | chunks_indexed=%d", document_id, len(chunks))
         return {
             "document_id": document_id,
             "chunks_indexed": len(chunks),
@@ -121,8 +126,14 @@ class RAGPipeline:
         session_id: str | None = None,
         user_id: int | None = None,
     ) -> dict[str, Any]:
+        t0 = time.monotonic()
         if session_id is None:
             session_id = str(uuid.uuid4())
+
+        logger.info(
+            "ask | kb=%s | session=%s | question=%r",
+            knowledge_base_id, session_id, question[:120],
+        )
 
         query_embedding = await self._embed(question)
 
@@ -134,29 +145,46 @@ class RAGPipeline:
                 threshold=self.settings.semantic_cache_threshold,
             )
             if cached is not None:
+                logger.info("ask | cache_hit | %.2fs", time.monotonic() - t0)
                 return {
                     "answer": cached["answer"],
                     "contexts": [],
                     "session_id": session_id,
                 }
 
+        logger.info("ask | cache_miss")
+
         # 2. Load session history
         history: list[dict[str, str]] = []
         if self.cache is not None:
             history = await self.cache.get_session_history(session_id)
+        logger.info("ask | history_messages=%d", len(history))
 
         # 3. Vector retrieval
+        t_ret = time.monotonic()
         contexts = await self.retriever.retrieve(
             session, query_embedding, knowledge_base_id=knowledge_base_id
+        )
+        logger.info(
+            "ask | retrieved=%d chunks in %.2fs | scores=%s",
+            len(contexts),
+            time.monotonic() - t_ret,
+            [round(c.score, 3) for c in contexts],
         )
 
         # 4. Attach presigned URLs
         if self.minio is not None:
             contexts = await self._attach_presigned_urls(session, contexts)
+            has_urls = sum(1 for c in contexts if getattr(c, "presigned_url", None))
+            logger.info("ask | presigned_urls=%d/%d", has_urls, len(contexts))
+        else:
+            logger.warning("ask | minio not configured — presigned URLs skipped")
 
         # 5. LLM generation
+        t_llm = time.monotonic()
         messages = build_messages(question, contexts, history=history)
         answer = await self._generate(messages)
+        logger.info("ask | generated in %.2fs | answer_len=%d", time.monotonic() - t_llm, len(answer))
 
         # 6. Persist
         if self.cache is not None:
@@ -178,23 +206,16 @@ class RAGPipeline:
                     sources_json=sources_json,
                 )
 
+        logger.info("ask | total=%.2fs", time.monotonic() - t0)
         return {"answer": answer, "contexts": contexts, "session_id": session_id}
 
     # ─── Helpers ─────────────────────────────────────────────────────────────
 
     async def _embed(self, text: str) -> list[float]:
-        response = await self._embed_client.embeddings.create(
-            model=self.settings.embed_model,
-            input=text,
-        )
-        return response.data[0].embedding
+        return await self._client.embed(text)
 
     async def _generate(self, messages: list[dict[str, str]]) -> str:
-        response = await self._llm.chat.completions.create(
-            model=self.settings.llm_model,
-            messages=messages,  # type: ignore[arg-type]
-        )
-        return response.choices[0].message.content or ""
+        return await self._client.generate(messages)
 
     async def _attach_presigned_urls(
         self, session: AsyncSession, contexts: list[RetrievedChunk]
