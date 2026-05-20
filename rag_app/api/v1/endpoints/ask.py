@@ -53,7 +53,17 @@ async def ask(
         session_id=payload.session_id,
         user_id=current_user.id,
     )
-    contexts = [_map_context(ctx) for ctx in result["contexts"]]
+
+    # Deduplicate contexts by document_id — keep highest-score chunk per document.
+    # Retriever returns chunks sorted by score desc, so first occurrence wins.
+    seen_doc_ids: set[int] = set()
+    contexts: list[ContextChunk] = []
+    for ctx in result["contexts"]:
+        mapped = _map_context(ctx)
+        if mapped.document_id not in seen_doc_ids:
+            seen_doc_ids.add(mapped.document_id)
+            contexts.append(mapped)
+
     return AskResponse(
         answer=result["answer"],
         contexts=contexts,

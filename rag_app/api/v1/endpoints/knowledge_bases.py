@@ -1,18 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rag_app.api.deps import get_current_user, require_admin_user
-from rag_app.db.models import KnowledgeBase
+from rag_app.api.deps import get_current_user, get_pipeline, require_admin_user
+from rag_app.db.models import ChatMessage, ChatSession, Document, KnowledgeBase
 from rag_app.api.v1.schemas import (
     KBAccessRequest,
     KBMemberListResponse,
     KBMemberResponse,
+    KbQueryItem,
+    KbQueryListResponse,
     KnowledgeBaseCreateRequest,
     KnowledgeBaseListResponse,
     KnowledgeBaseResponse,
 )
 from rag_app.db.models import User
 from rag_app.db.session import get_session
+from rag_app.rag.pipeline import RAGPipeline
 from rag_app.services.knowledge_bases import KnowledgeBaseService, KnowledgeBaseServiceError
 from rag_app.services.stats import StatsService
 
@@ -96,13 +100,44 @@ async def get_knowledge_base(
 async def delete_knowledge_base(
     kb_id: int,
     session: AsyncSession = Depends(get_session),
-    _: User = Depends(require_admin_user),
+    current_user: User = Depends(require_admin_user),
+    pipeline: RAGPipeline = Depends(get_pipeline),
 ) -> KnowledgeBaseResponse:
+    # Собираем s3_key ДО удаления — потом документов уже не будет
+    s3_keys_result = await session.execute(
+        select(Document.s3_key).where(
+            Document.knowledge_base_id == kb_id,
+            Document.s3_key.is_not(None),
+        )
+    )
+    s3_keys = [row[0] for row in s3_keys_result.all()]
+
     service = KnowledgeBaseService(session)
     try:
         kb = await service.delete(kb_id)
     except KnowledgeBaseServiceError as exc:
         raise _handle_kb_error(exc) from exc
+
+    # Чистим файлы из MinIO (если настроен)
+    if pipeline.minio and s3_keys:
+        for key in s3_keys:
+            try:
+                await pipeline.minio.delete_file(key)
+            except Exception:
+                pass
+
+    # Инвалидируем кеш
+    if pipeline.cache:
+        try:
+            await pipeline.cache.invalidate_kb_cache(kb_id)
+        except Exception:
+            pass
+
+    await StatsService(session).log(
+        "kb_deleted",
+        actor_id=current_user.id,
+        meta={"name": kb.name},
+    )
     return _kb_response(kb)
 
 
@@ -149,6 +184,38 @@ async def add_kb_member(
         user_id=access.user_id,
         knowledge_base_id=access.knowledge_base_id,
         created_at=access.created_at,
+    )
+
+
+@router.get("/{kb_id}/queries", response_model=KbQueryListResponse, summary="История запросов к базе знаний")
+async def list_kb_queries(
+    kb_id: int,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(require_admin_user),
+) -> KbQueryListResponse:
+    rows = await session.execute(
+        select(ChatMessage)
+        .join(ChatSession, ChatSession.id == ChatMessage.session_id)
+        .where(
+            ChatSession.knowledge_base_id == kb_id,
+            ChatMessage.role == "user",
+        )
+        .order_by(ChatMessage.created_at.desc())
+        .limit(limit)
+    )
+    messages = list(rows.scalars())
+    return KbQueryListResponse(
+        queries=[
+            KbQueryItem(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at,
+                sources_json=m.sources_json,
+            )
+            for m in messages
+        ]
     )
 
 

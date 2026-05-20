@@ -7,6 +7,7 @@ import {
   InviteCodeListResponse,
   KBMember,
   KBMemberListResponse,
+  KbQueryListResponse,
   KnowledgeBase,
   KnowledgeBaseListResponse,
   User,
@@ -80,6 +81,9 @@ export const addKBMember = (kbId: number, userId: number): Promise<KBMember> =>
 
 export const removeKBMember = (kbId: number, userId: number): Promise<void> =>
   apiRequest<void>(`/knowledge-bases/${kbId}/members/${userId}`, { method: "DELETE" });
+
+export const fetchKbQueries = (kbId: number, limit = 50): Promise<KbQueryListResponse> =>
+  apiRequest<KbQueryListResponse>(`/knowledge-bases/${kbId}/queries?limit=${limit}`, { method: "GET" });
 
 // ─── Documents ────────────────────────────────────────────────────────────────
 

@@ -4,7 +4,7 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from rag_app.db.models import KnowledgeBase, UserKnowledgeBase
+from rag_app.db.models import Document, KnowledgeBase, UserKnowledgeBase
 
 
 class KnowledgeBaseServiceError(Exception):
@@ -55,6 +55,15 @@ class KnowledgeBaseService:
         kb = await self.get_by_id(kb_id)
         if kb is None:
             raise KnowledgeBaseServiceError(HTTPStatus.NOT_FOUND, "База знаний не найдена")
+
+        # Явно удаляем документы (их chunks каскадно удалятся через ORM/DB CASCADE).
+        # Без этого в async-сессии lazy-cascade не срабатывает, и FK ondelete=SET NULL
+        # оставляет документы в базе без knowledge_base_id.
+        docs_result = await self.session.scalars(
+            select(Document).where(Document.knowledge_base_id == kb_id)
+        )
+        for doc in docs_result.all():
+            await self.session.delete(doc)
 
         await self.session.delete(kb)
         await self.session.commit()

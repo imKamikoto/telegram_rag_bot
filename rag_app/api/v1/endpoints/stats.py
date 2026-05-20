@@ -19,4 +19,10 @@ async def get_stats(
     overview = await svc.get_overview()
     top_kbs = await svc.get_top_kbs()
     activity = await svc.get_activity()
-    return StatsOverviewResponse(overview=overview, top_kbs=top_kbs, activity=activity)
+    queries_chart = await svc.get_queries_daily(days=30)
+    return StatsOverviewResponse(
+        overview=overview,
+        top_kbs=top_kbs,
+        activity=activity,
+        queries_chart=queries_chart,
+    )

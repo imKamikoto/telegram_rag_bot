@@ -100,10 +100,25 @@ export type StatsActivityItem = {
   created_at: string;
 };
 
+export type QueryChartPoint = { date: string; count: number };
+
 export type StatsResponse = {
   overview: StatsOverview;
   top_kbs: StatsTopKb[];
   activity: StatsActivityItem[];
+  queries_chart: QueryChartPoint[];
+};
+
+export type KbQueryItem = {
+  id: number;
+  role: string;
+  content: string;
+  created_at: string;
+  sources_json: Array<{ document_id: number; document_name: string }> | null;
+};
+
+export type KbQueryListResponse = {
+  queries: KbQueryItem[];
 };
 
 export type ServiceHealth = {

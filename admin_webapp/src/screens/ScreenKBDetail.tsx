@@ -1,10 +1,76 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Document, KBMember, KnowledgeBase, User } from "../types";
-import { addKBMember, fetchDocuments, fetchKBMembers, indexDocument, removeKBMember, toggleDocumentActive, deleteDocument } from "../api";
+import { Document, KBMember, KbQueryItem, KnowledgeBase, User } from "../types";
+import { addKBMember, fetchDocuments, fetchKBMembers, fetchKbQueries, indexDocument, removeKBMember, toggleDocumentActive, deleteDocument } from "../api";
 import { PageHeader, Modal, Toolbar, WTable } from "../components/layout";
 import { WAvatar, WBtn, WChip, WDocBadge, WKbTile, WSearch, fmt, fmtSize } from "../components/primitives";
 
 type KbDetailTab = "docs" | "access" | "queries" | "settings";
+
+// ─── QueriesTab ──────────────────────────────────────────────────────────────
+
+function fmtQueryDate(iso: string): string {
+  return new Date(iso).toLocaleString("ru-RU", {
+    day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function QueriesTab({ kbId, queries, loading, onLoad }: {
+  kbId: number;
+  queries: KbQueryItem[];
+  loading: boolean;
+  onLoad: () => void;
+}) {
+  useEffect(() => { onLoad(); }, [kbId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading) {
+    return <div style={{ padding: 32, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>Загрузка…</div>;
+  }
+
+  if (queries.length === 0) {
+    return (
+      <div style={{ padding: 48, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
+        Запросов к этой базе ещё не было
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: "12px 28px", display: "flex", flexDirection: "column", gap: 1 }}>
+      {queries.map(q => (
+        <div key={q.id} style={{
+          padding: "12px 16px",
+          borderRadius: 8,
+          background: "var(--surface)",
+          border: "1px solid var(--border)",
+          marginBottom: 6,
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: "var(--fg)", lineHeight: 1.5, wordBreak: "break-word" }}>
+                {q.content}
+              </div>
+              {q.sources_json && q.sources_json.length > 0 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                  {q.sources_json.map((s, i) => (
+                    <span key={i} style={{
+                      fontSize: 11, padding: "2px 7px", borderRadius: 4,
+                      background: "var(--surface-2)", color: "var(--muted)",
+                    }}>
+                      {s.document_name}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+            <span style={{ fontSize: 11, color: "var(--muted)", whiteSpace: "nowrap", flexShrink: 0 }}>
+              {fmtQueryDate(q.created_at)}
+            </span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function ScreenKBDetail({ kb, allDocuments, users, busy, onBack, onDelete, onOpenUpload }: {
   kb: KnowledgeBase;
@@ -25,6 +91,8 @@ export function ScreenKBDetail({ kb, allDocuments, users, busy, onBack, onDelete
   const [showAddModal, setShowAddModal] = useState(false);
   const [addQ, setAddQ]         = useState("");
   const [addBusy, setAddBusy]   = useState(false);
+  const [queries, setQueries]   = useState<KbQueryItem[]>([]);
+  const [queriesLoading, setQueriesLoading] = useState(false);
 
   useEffect(() => {
     setLoadingData(true);
@@ -343,9 +411,18 @@ export function ScreenKBDetail({ kb, allDocuments, users, busy, onBack, onDelete
       )}
 
       {tab === "queries" && (
-        <div style={{ padding: 48, textAlign: "center", color: "var(--muted)", fontSize: 13 }}>
-          История запросов пока недоступна
-        </div>
+        <QueriesTab
+          kbId={kb.id}
+          queries={queries}
+          loading={queriesLoading}
+          onLoad={() => {
+            setQueriesLoading(true);
+            fetchKbQueries(kb.id)
+              .then(r => setQueries(r.queries))
+              .catch(() => {})
+              .finally(() => setQueriesLoading(false));
+          }}
+        />
       )}
 
       {tab === "settings" && (

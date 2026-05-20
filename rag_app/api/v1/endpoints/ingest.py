@@ -8,10 +8,11 @@ from rag_app.api.v1.schemas import (
     DocumentResponse,
     IngestResponse,
 )
-from rag_app.db.models import Document
+from rag_app.db.models import Document, User
 from rag_app.db.session import get_session
 from rag_app.rag.pipeline import RAGPipeline
 from rag_app.services.documents import DocumentChunkService, DocumentService, DocumentServiceError
+from rag_app.services.stats import StatsService
 
 router = APIRouter()
 
@@ -64,7 +65,7 @@ async def upload_file(
     knowledge_base_id: int | None = Form(default=None),
     session: AsyncSession = Depends(get_session),
     pipeline: RAGPipeline = Depends(get_pipeline),
-    _: object = Depends(require_admin_user),
+    current_user: User = Depends(require_admin_user),
 ) -> DocumentResponse:
     try:
         fmt = _detect_format(file.filename or "", file.content_type or "")
@@ -79,6 +80,13 @@ async def upload_file(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    await StatsService(session).log(
+        "document_uploaded",
+        actor_id=current_user.id,
+        knowledge_base_id=doc.knowledge_base_id,
+        document_id=doc.id,
+        meta={"file_name": doc.file_name},
+    )
     return _doc_response(doc)
 
 
@@ -101,7 +109,7 @@ async def index_document(
 async def delete_document(
     document_id: int,
     session: AsyncSession = Depends(get_session),
-    _: object = Depends(require_admin_user),
+    current_user: User = Depends(require_admin_user),
 ) -> DocumentResponse:
     service = DocumentService(session)
     try:
@@ -109,6 +117,13 @@ async def delete_document(
     except DocumentServiceError as exc:
         raise _handle_doc_error(exc) from exc
 
+    await StatsService(session).log(
+        "document_deleted",
+        actor_id=current_user.id,
+        knowledge_base_id=doc.knowledge_base_id,
+        document_id=doc.id,
+        meta={"file_name": doc.file_name},
+    )
     return _doc_response(doc)
 
 

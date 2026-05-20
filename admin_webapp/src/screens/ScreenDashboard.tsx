@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { fetchStats, fetchHealthServices } from "../api";
 import {
-  AuthResponse, Document, InviteCode, KnowledgeBase,
+  AuthResponse, Document, InviteCode, KnowledgeBase, QueryChartPoint,
   ServicesHealthResponse, StatsActivityItem, StatsResponse, StatsTopKb, User,
 } from "../types";
 import { PageHeader, Screen } from "../components/layout";
@@ -25,25 +25,6 @@ function fmtAxisDate(iso: string): string {
 }
 
 // ─── chart ──────────────────────────────────────────────────────────────────
-
-function seededRand(seed: number): () => number {
-  let s = seed;
-  return () => { s = (s * 16807 + 0) % 2147483647; return (s - 1) / 2147483646; };
-}
-
-function generateChartData(queriesTotal: number, days = 30): number[] {
-  const rand = seededRand(queriesTotal || 42);
-  const base = Math.max(queriesTotal * 0.6, 10);
-  const data: number[] = [];
-  let v = base * 0.4;
-  for (let i = 0; i < days; i++) {
-    v += (rand() - 0.4) * base * 0.12;
-    v = Math.max(0, Math.min(v, base * 1.4));
-    if (i === days - 1) v = queriesTotal || 0;
-    data.push(Math.round(v));
-  }
-  return data;
-}
 
 function AreaChart({ data, color = "var(--accent)" }: { data: number[]; color?: string }) {
   const W = 800, H = 140, pad = { t: 12, b: 28, l: 4, r: 4 };
@@ -133,6 +114,16 @@ function buildSentence(
       return {
         actor: targetUser?.telegram_name ?? `Пользователь #${item.target_user_id}`,
         text: `получил доступ к базе${kbLabel}`,
+      };
+    case "kb_deleted":
+      return {
+        actor: actorUser?.telegram_name ?? "Администратор",
+        text: `удалил(а) базу знаний${kbLabel}`,
+      };
+    case "document_deleted":
+      return {
+        actor: actorUser?.telegram_name ?? "Администратор",
+        text: `удалил(а) документ ${meta.file_name ?? ""}${kbLabel}`,
       };
     case "kb_access_revoked":
       return {
@@ -256,10 +247,12 @@ export function ScreenDashboard({ auth, kbs, documents, users, invites, onNaviga
   const userMap = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
   const kbMap = useMemo(() => new Map(kbs.map(k => [k.id, k])), [kbs]);
 
-  const chartData = useMemo(
-    () => generateChartData(ov?.queries_today ?? 0),
-    [ov?.queries_today],
-  );
+  // Реальные данные по дням из API; если ещё не загружены — пустой массив с нулями
+  const chartData = useMemo<number[]>(() => {
+    const pts: QueryChartPoint[] = stats?.queries_chart ?? [];
+    if (pts.length === 0) return Array(30).fill(0);
+    return pts.map(p => p.count);
+  }, [stats?.queries_chart]);
 
   const statCards = [
     { label: "БАЗЫ ЗНАНИЙ",      value: ov?.knowledge_bases.total ?? kbs.length,  delta: ov ? `+${ov.knowledge_bases.week}` : null, dLabel: "за неделю" },
