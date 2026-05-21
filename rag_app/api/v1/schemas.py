@@ -231,8 +231,8 @@ class StatsTopKb(BaseModel):
 class StatsActivityItem(BaseModel):
     event: str = Field(
         ...,
-        description="Тип события: kb_created | document_uploaded | user_registered | "
-                    "kb_access_granted | kb_access_revoked | role_changed",
+        description="Тип события: kb_created | kb_deleted | document_uploaded | document_deleted | "
+                    "user_registered | kb_access_granted | kb_access_revoked | role_changed",
     )
     actor_id: int | None
     target_user_id: int | None
@@ -242,10 +242,33 @@ class StatsActivityItem(BaseModel):
     created_at: str
 
 
+class QueryChartPoint(BaseModel):
+    date: str = Field(..., description="Дата в формате YYYY-MM-DD")
+    count: int = Field(..., description="Количество запросов за день")
+
+
 class StatsOverviewResponse(BaseModel):
     overview: StatsOverview
     top_kbs: list[StatsTopKb]
     activity: list[StatsActivityItem]
+    queries_chart: list[QueryChartPoint] = Field(
+        default_factory=list,
+        description="Запросы пользователей по дням (последние 30 дней)",
+    )
+
+
+# ─── KB Queries ──────────────────────────────────────────────────────────────
+
+class KbQueryItem(BaseModel):
+    id: int
+    role: str
+    content: str = Field(..., description="Текст вопроса")
+    created_at: datetime
+    sources_json: list[dict] | None = Field(default=None)
+
+
+class KbQueryListResponse(BaseModel):
+    queries: list[KbQueryItem]
 
 
 # ─── Health ──────────────────────────────────────────────────────────────────

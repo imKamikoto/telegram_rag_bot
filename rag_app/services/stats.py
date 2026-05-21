@@ -74,7 +74,7 @@ class StatsService:
         ]
 
     async def get_activity(self, limit: int = 30) -> list[dict[str, Any]]:
-        # Pull from activity_log (role changes, access revocation, etc.)
+        # Основной источник — activity_log (все явно залогированные события).
         log_rows = await self.session.execute(
             select(ActivityLog).order_by(ActivityLog.created_at.desc()).limit(limit)
         )
@@ -91,22 +91,9 @@ class StatsService:
             for row in log_rows.scalars()
         ]
 
-        # Supplement with derived events from entity tables (no log entry yet for old data)
+        # Дополняем производными событиями только для данных, которые не логируются явно:
+        # user_registered — нет явного лога при регистрации.
         derived: list[dict[str, Any]] = []
-
-        doc_rows = await self.session.execute(
-            select(Document.id, Document.file_name, Document.knowledge_base_id, Document.created_at)
-            .order_by(Document.created_at.desc()).limit(limit)
-        )
-        for r in doc_rows:
-            derived.append({
-                "event": "document_uploaded",
-                "actor_id": None, "target_user_id": None,
-                "knowledge_base_id": r.knowledge_base_id,
-                "document_id": r.id,
-                "meta": {"file_name": r.file_name},
-                "created_at": r.created_at.isoformat(),
-            })
 
         user_rows = await self.session.execute(
             select(User.id, User.telegram_name, User.created_at)
@@ -121,26 +108,33 @@ class StatsService:
                 "created_at": r.created_at.isoformat(),
             })
 
-        access_rows = await self.session.execute(
-            select(
-                UserKnowledgeBase.user_id,
-                UserKnowledgeBase.knowledge_base_id,
-                UserKnowledgeBase.created_at,
-            )
-            .order_by(UserKnowledgeBase.created_at.desc()).limit(limit)
-        )
-        for r in access_rows:
-            derived.append({
-                "event": "kb_access_granted",
-                "actor_id": None, "target_user_id": r.user_id,
-                "knowledge_base_id": r.knowledge_base_id, "document_id": None,
-                "meta": {},
-                "created_at": r.created_at.isoformat(),
-            })
-
         all_items = log_items + derived
         all_items.sort(key=lambda x: x["created_at"], reverse=True)
         return all_items[:limit]
+
+    async def get_queries_daily(self, days: int = 30) -> list[dict[str, Any]]:
+        """Количество запросов пользователей по дням за последние N дней."""
+        from sqlalchemy import cast, Date as SADate
+
+        now = datetime.now(timezone.utc)
+        start = now - timedelta(days=days)
+
+        rows = await self.session.execute(
+            select(
+                cast(ChatMessage.created_at, SADate).label("day"),
+                func.count().label("count"),
+            )
+            .where(ChatMessage.role == "user", ChatMessage.created_at >= start)
+            .group_by(cast(ChatMessage.created_at, SADate))
+            .order_by(cast(ChatMessage.created_at, SADate))
+        )
+        day_map: dict[str, int] = {str(r.day): r.count for r in rows}
+
+        result = []
+        for i in range(days):
+            day = (now - timedelta(days=days - 1 - i)).date()
+            result.append({"date": str(day), "count": day_map.get(str(day), 0)})
+        return result
 
     async def log(
         self,

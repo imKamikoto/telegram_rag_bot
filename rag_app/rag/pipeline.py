@@ -9,7 +9,7 @@ from pypdf import PdfReader
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from rag_app.config import Settings
-from rag_app.db.models import Document
+from rag_app.db.models import ChatMessage, ChatSession, Document
 from rag_app.rag.chunking import chunk_text
 from rag_app.rag.llm_client import LLMClient
 from rag_app.services.documents import DocumentChunkService, DocumentService
@@ -206,10 +206,48 @@ class RAGPipeline:
                     sources_json=sources_json,
                 )
 
+        # 7. Persist messages to DB (for stats/history)
+        if user_id is not None and knowledge_base_id is not None:
+            try:
+                await self._persist_chat(session, user_id, knowledge_base_id, question, answer, contexts)
+            except Exception as exc:
+                logger.warning("ask | db_persist_failed: %s", exc)
+
         logger.info("ask | total=%.2fs", time.monotonic() - t0)
         return {"answer": answer, "contexts": contexts, "session_id": session_id}
 
     # ─── Helpers ─────────────────────────────────────────────────────────────
+
+    async def _persist_chat(
+        self,
+        session: AsyncSession,
+        user_id: int,
+        knowledge_base_id: int,
+        question: str,
+        answer: str,
+        contexts: list[RetrievedChunk],
+    ) -> None:
+        """Сохраняет вопрос и ответ в ChatSession/ChatMessage для статистики и истории."""
+        from sqlalchemy import select as sa_select
+
+        chat_session = await session.scalar(
+            sa_select(ChatSession).where(
+                ChatSession.user_id == user_id,
+                ChatSession.knowledge_base_id == knowledge_base_id,
+            ).limit(1)
+        )
+        if chat_session is None:
+            chat_session = ChatSession(user_id=user_id, knowledge_base_id=knowledge_base_id)
+            session.add(chat_session)
+            await session.flush()  # нужен id
+
+        sources = [
+            {"document_id": c.document_id, "document_name": c.document_name}
+            for c in contexts
+        ]
+        session.add(ChatMessage(session_id=chat_session.id, role="user",    content=question))
+        session.add(ChatMessage(session_id=chat_session.id, role="assistant", content=answer, sources_json=sources))
+        await session.commit()
 
     async def _embed(self, text: str) -> list[float]:
         return await self._client.embed(text)
