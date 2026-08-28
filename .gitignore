@@ -5,3 +5,4 @@ __pycache__/
 node_modules/
 admin_webapp/dist/
 admin_webapp/node_modules/
+tests/locust/logs/
